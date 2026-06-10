@@ -1,17 +1,17 @@
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import React from 'react';
 
 import { HapticTab } from '@/components/haptic-tab';
 import { palette, type } from '@/constants/design';
 
-export default function TabLayout() {
+export default function InvigilatorTabLayout() {
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
         sceneStyle: { backgroundColor: palette.background },
-        tabBarActiveTintColor: palette.teal,
+        tabBarActiveTintColor: palette.warning,
         tabBarButton: HapticTab,
         tabBarInactiveTintColor: '#6b7f9c',
         tabBarItemStyle: {
@@ -20,7 +20,7 @@ export default function TabLayout() {
         tabBarLabelStyle: {
           fontSize: type.tiny,
           fontWeight: '700',
-          letterSpacing: 1.4,
+          letterSpacing: 1.3,
           marginTop: 2,
           textTransform: 'uppercase',
         },
@@ -28,7 +28,7 @@ export default function TabLayout() {
           backgroundColor: palette.background,
           borderTopColor: palette.border,
           borderTopWidth: 1,
-          height: 70,
+          height: 72,
           paddingBottom: 10,
           paddingTop: 8,
         },
@@ -36,17 +36,34 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => <Ionicons color={color} name="home-outline" size={19} />,
+          title: 'Dash',
+          tabBarIcon: ({ color }) => (
+            <MaterialCommunityIcons color={color} name="view-grid-outline" size={18} />
+          ),
         }}
       />
       <Tabs.Screen
-        name="results"
+        name="monitor"
         options={{
-          title: 'Results',
+          title: 'Monitor',
           tabBarStyle: { display: 'none' },
+          tabBarIcon: ({ color }) => <MaterialCommunityIcons color={color} name="monitor" size={18} />,
+        }}
+      />
+      <Tabs.Screen
+        name="create"
+        options={{
+          title: 'Create',
+          tabBarStyle: { display: 'none' },
+          tabBarIcon: ({ color }) => <Ionicons color={color} name="add" size={18} />,
+        }}
+      />
+      <Tabs.Screen
+        name="reports"
+        options={{
+          title: 'Reports',
           tabBarIcon: ({ color }) => (
-            <MaterialCommunityIcons color={color} name="file-document-outline" size={19} />
+            <MaterialCommunityIcons color={color} name="file-document-outline" size={18} />
           ),
         }}
       />
@@ -54,8 +71,7 @@ export default function TabLayout() {
         name="profile"
         options={{
           title: 'Profile',
-          tabBarStyle: { display: 'none' },
-          tabBarIcon: ({ color }) => <Ionicons color={color} name="person-outline" size={18} />,
+          tabBarIcon: ({ color }) => <Feather color={color} name="user" size={17} />,
         }}
       />
     </Tabs>

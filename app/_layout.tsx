@@ -1,24 +1,35 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { DarkTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { palette } from '@/constants/design';
 
-export const unstable_settings = {
-  anchor: '(tabs)',
+const navigationTheme = {
+  ...DarkTheme,
+  colors: {
+    ...DarkTheme.colors,
+    background: palette.background,
+    border: palette.border,
+    card: palette.panel,
+    notification: palette.danger,
+    primary: palette.teal,
+    text: palette.text,
+  },
 };
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
-
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+    <ThemeProvider value={navigationTheme}>
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: palette.background } }}>
+        <Stack.Screen name="index" />
+        <Stack.Screen name="sign-in" />
+        <Stack.Screen name="invigilator-sign-in" />
+        <Stack.Screen name="exam-session" />
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="(invigilator-tabs)" />
       </Stack>
-      <StatusBar style="auto" />
+      <StatusBar style="light" backgroundColor={palette.background} />
     </ThemeProvider>
   );
 }
