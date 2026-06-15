@@ -2,6 +2,7 @@ import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -13,12 +14,29 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { palette, type } from '@/constants/design';
+import { layout, palette, type } from '@/constants/design';
+import { signInInvigilator } from '@/lib/student-auth';
 
 export default function InvigilatorSignInScreen() {
-  const [staffId, setStaffId] = useState('STAFF/2024/004');
-  const [password, setPassword] = useState('password');
+  const [staffId, setStaffId] = useState<string>('');
+  const [password, setPassword] = useState<string>('');
   const [showPassword, setShowPassword] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleInvigilatorSignIn = async () => {
+    setErrorMessage('');
+    setIsLoading(true);
+
+    try {
+      await signInInvigilator(staffId, password);
+      router.replace('/(invigilator-tabs)');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Sign-in failed. Try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
@@ -44,10 +62,10 @@ export default function InvigilatorSignInScreen() {
           <View style={styles.formBlock}>
             <Text style={styles.fieldLabel}>STAFF ID</Text>
             <TextInput
-              autoCapitalize="characters"
+              autoCapitalize="none"
               autoCorrect={false}
               onChangeText={setStaffId}
-              placeholder="STAFF/2024/004"
+              placeholder="Staff ID or username"
               placeholderTextColor="#547099"
               style={styles.input}
               value={staffId}
@@ -75,6 +93,8 @@ export default function InvigilatorSignInScreen() {
             </View>
           </View>
 
+          {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+
           <View style={styles.biometricCard}>
             <View style={styles.biometricLeft}>
               <MaterialCommunityIcons color={palette.warning} name="fingerprint" size={22} />
@@ -87,9 +107,14 @@ export default function InvigilatorSignInScreen() {
           </View>
 
           <Pressable
-            onPress={() => router.replace('/(invigilator-tabs)')}
-            style={styles.primaryButton}>
-            <Text style={styles.primaryButtonText}>Authenticate</Text>
+            disabled={isLoading}
+            onPress={handleInvigilatorSignIn}
+            style={({ pressed }) => [styles.primaryButton, (pressed || isLoading) && styles.primaryButtonPressed]}>
+            {isLoading ? (
+              <ActivityIndicator color="#1b1200" size="small" />
+            ) : (
+              <Text style={styles.primaryButtonText}>Authenticate</Text>
+            )}
           </Pressable>
 
           <Text style={styles.supportCopy}>
@@ -113,10 +138,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderColor: palette.warning,
     borderWidth: 1,
-    height: 42,
+    height: 40,
     justifyContent: 'center',
-    marginTop: 28,
-    width: 42,
+    marginTop: 22,
+    width: 40,
   },
   backButton: {
     alignItems: 'center',
@@ -160,32 +185,40 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   content: {
+    alignSelf: 'center',
     flexGrow: 1,
     paddingBottom: 12,
-    paddingHorizontal: 18,
+    paddingHorizontal: layout.screenPadding,
+    maxWidth: layout.maxWidth,
+    width: '100%',
+  },
+  errorText: {
+    color: '#ff8f8f',
+    fontSize: type.body,
+    marginTop: 16,
   },
   fieldLabel: {
     color: palette.mutedStrong,
     fontSize: type.label,
-    letterSpacing: 2.1,
-    marginBottom: 10,
+    letterSpacing: 1.9,
+    marginBottom: 8,
   },
   footerSpacer: {
     flex: 1,
-    minHeight: 190,
+    minHeight: layout.footerSpacer + 12,
   },
   formBlock: {
     gap: 14,
-    marginTop: 32,
+    marginTop: 26,
   },
   input: {
     backgroundColor: palette.panel,
     borderColor: palette.border,
     borderWidth: 1,
     color: palette.text,
-    fontSize: 19,
+    fontSize: type.bodyLarge,
     paddingHorizontal: 14,
-    paddingVertical: 14,
+    paddingVertical: 12,
   },
   passwordField: {
     alignItems: 'center',
@@ -199,18 +232,22 @@ const styles = StyleSheet.create({
   passwordInput: {
     color: palette.text,
     flex: 1,
-    fontSize: 19,
-    paddingVertical: 14,
+    fontSize: type.bodyLarge,
+    paddingVertical: 12,
   },
   primaryButton: {
     alignItems: 'center',
     backgroundColor: '#d7a413',
-    marginTop: 26,
-    paddingVertical: 16,
+    minHeight: 48,
+    justifyContent: 'center',
+    marginTop: 24,
+  },
+  primaryButtonPressed: {
+    opacity: 0.92,
   },
   primaryButtonText: {
     color: '#1b1200',
-    fontSize: 17,
+    fontSize: type.bodyLarge,
     fontWeight: '800',
   },
   safeArea: {
@@ -240,8 +277,8 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     color: '#6f88aa',
-    fontSize: 16,
-    marginTop: 10,
+    fontSize: type.subtitle,
+    marginTop: 8,
   },
   supportAccent: {
     color: palette.warning,
@@ -249,15 +286,15 @@ const styles = StyleSheet.create({
   },
   supportCopy: {
     color: palette.mutedStrong,
-    fontSize: 15,
-    marginTop: 18,
+    fontSize: type.body,
+    marginTop: 16,
     textAlign: 'center',
   },
   title: {
     color: palette.text,
-    fontSize: 22,
+    fontSize: type.title + 1,
     fontWeight: '800',
-    marginTop: 28,
+    marginTop: 22,
   },
   topDivider: {
     backgroundColor: palette.border,
@@ -267,7 +304,7 @@ const styles = StyleSheet.create({
   topLabel: {
     color: palette.mutedStrong,
     fontSize: type.label,
-    letterSpacing: 2.3,
+    letterSpacing: 2,
   },
   topRow: {
     alignItems: 'center',
@@ -275,3 +312,4 @@ const styles = StyleSheet.create({
     gap: 12,
   },
 });
+

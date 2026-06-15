@@ -1,112 +1,141 @@
 import { Feather } from '@expo/vector-icons';
-import { router } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { palette, type } from '@/constants/design';
+import { layout, palette, type } from '@/constants/design';
+import { fetchStudentExamResult, type StudentExamResultData } from '@/lib/student-exam';
 
-const checks = [
-  { label: 'GAZE COMPLIANCE', fill: 85, value: '85%' },
-  { label: 'FACE DETECTION', fill: 92, value: '92%' },
-  { label: 'APP FOCUS', fill: 97, value: '97%' },
-  { label: 'AUDIO ENVIRONMENT', fill: 88, value: '88%' },
-] as const;
+function formatSubmittedAt(isoDate: string) {
+  const date = new Date(isoDate);
+  if (Number.isNaN(date.getTime())) {
+    return 'Unknown submission time';
+  }
 
-const stats = [
-  { label: 'QUESTIONS', value: '30/30' },
-  { label: 'DURATION', value: '2h 58m' },
-  { label: 'FLAGS', value: '1' },
-];
+  return `${date.toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  })} at ${date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`;
+}
 
-const log = [
-  { detail: 'Gaze deviation detected', time: '10:14' },
-  { detail: 'AI systems nominal', time: '10:28' },
-  { detail: 'Exam submitted by student', time: '10:45' },
-];
+function getPerformanceLabel(scorePercent: number) {
+  if (scorePercent >= 85) {
+    return 'Excellent';
+  }
+
+  if (scorePercent >= 70) {
+    return 'Great';
+  }
+
+  if (scorePercent >= 50) {
+    return 'Fair';
+  }
+
+  return 'Needs Improvement';
+}
 
 export default function ResultsScreen() {
+  const params = useLocalSearchParams<{ examId?: string }>();
+  const examId = typeof params.examId === 'string' ? params.examId : undefined;
+
+  const [resultData, setResultData] = useState<StudentExamResultData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadResult = async () => {
+      setIsLoading(true);
+      setErrorMessage('');
+
+      try {
+        const result = await fetchStudentExamResult(examId);
+        if (!isMounted) {
+          return;
+        }
+
+        setResultData(result);
+      } catch (error) {
+        if (isMounted) {
+          setErrorMessage(error instanceof Error ? error.message : 'Unable to load exam result.');
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    void loadResult();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [examId]);
+
+  const performanceLabel = useMemo(
+    () => getPerformanceLabel(resultData?.scorePercent ?? 0),
+    [resultData?.scorePercent]
+  );
+
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.heroCard}>
           <View>
-            <Text style={styles.eyebrow}>POST-EXAM REPORT</Text>
-            <Text style={styles.title}>Computer Networks</Text>
-            <Text style={styles.meta}>CS 450 - 09 Jun 2025 - 10:00-13:00</Text>
+            <Text style={styles.eyebrow}>POST-EXAM RESULT</Text>
+            <Text style={styles.title}>{resultData?.examTitle ?? 'Exam Result'}</Text>
+            <Text style={styles.meta}>
+              {(resultData?.courseCode ?? 'COURSE') + ' - ' + formatSubmittedAt(resultData?.submittedAt ?? '')}
+            </Text>
           </View>
           <View style={styles.badge}>
-            <Text style={styles.badgeText}>COMPLETED</Text>
+            <Text style={styles.badgeText}>SUBMITTED</Text>
           </View>
         </View>
 
-        <View style={styles.sectionBlock}>
-          <Text style={styles.sectionLabel}>OVERALL INTEGRITY</Text>
+        {isLoading ? (
+          <View style={styles.loadingCard}>
+            <ActivityIndicator color={palette.teal} size="small" />
+            <Text style={styles.loadingText}>Loading result...</Text>
+          </View>
+        ) : null}
 
-          <View style={styles.integrityRow}>
-            <View style={styles.ringWrap}>
-              <View style={styles.ringOuter}>
-                <View style={styles.ringCutout} />
-                <View style={styles.ringInner}>
-                  <Text style={styles.ringValue}>90</Text>
-                  <Text style={styles.ringScale}>/ 100</Text>
-                </View>
-              </View>
-            </View>
+        {errorMessage ? (
+          <View style={styles.errorCard}>
+            <Text style={styles.errorText}>{errorMessage}</Text>
+            <Pressable onPress={() => router.replace('/(tabs)')} style={styles.retryButton}>
+              <Text style={styles.retryButtonText}>Back to dashboard</Text>
+            </Pressable>
+          </View>
+        ) : null}
 
-            <View style={styles.integrityCopyWrap}>
-              <Text style={styles.integrityTitle}>High Integrity</Text>
-              <Text style={styles.integrityCopy}>
-                Exam completed with minimal integrity flags. 1 minor gaze deviation recorded.
+        {!isLoading && !errorMessage && resultData ? (
+          <View style={styles.sectionBlock}>
+            <Text style={styles.sectionLabel}>SCORE SUMMARY</Text>
+
+            <View style={styles.scoreCard}>
+              <Text style={styles.scoreValue}>{resultData.scorePercent}%</Text>
+              <Text style={styles.scoreLabel}>{performanceLabel}</Text>
+              <Text style={styles.scoreMeta}>
+                {resultData.correctAnswers} correct out of {resultData.totalQuestions} questions
               </Text>
             </View>
+
+            <View style={styles.remarkCard}>
+              <Text style={styles.remarkTitle}>Remark</Text>
+              <Text style={styles.remarkCopy}>{resultData.remark}</Text>
+            </View>
+
+            <Pressable onPress={() => router.replace('/(tabs)')} style={styles.secondaryButton}>
+              <Feather color={palette.mutedStrong} name="home" size={15} />
+              <Text style={styles.secondaryButtonText}>Back to Home</Text>
+            </Pressable>
           </View>
-
-          <View style={styles.checkList}>
-            {checks.map((check) => (
-              <View key={check.label} style={styles.checkRow}>
-                <Text style={styles.checkLabel}>{check.label}</Text>
-                <View style={styles.track}>
-                  <View style={[styles.trackFill, { width: `${check.fill}%` }]} />
-                </View>
-                <Text style={styles.checkValue}>{check.value}</Text>
-              </View>
-            ))}
-          </View>
-
-          <View style={styles.divider} />
-
-          <View style={styles.statsRow}>
-            {stats.map((item) => (
-              <View key={item.label} style={styles.statCard}>
-                <Text style={styles.statValue}>{item.value}</Text>
-                <Text style={styles.statLabel}>{item.label}</Text>
-              </View>
-            ))}
-          </View>
-
-          <View style={styles.divider} />
-
-          <Text style={styles.sectionLabel}>SESSION LOG</Text>
-          <View style={styles.logList}>
-            {log.map((item) => (
-              <View key={item.time} style={styles.logRow}>
-                <Text style={styles.logTime}>{item.time}</Text>
-                <View style={styles.logDot} />
-                <Text style={styles.logDetail}>{item.detail}</Text>
-              </View>
-            ))}
-          </View>
-
-          <Pressable style={styles.primaryButton}>
-            <Feather color="#032228" name="download" size={16} />
-            <Text style={styles.primaryButtonText}>Download Report</Text>
-          </Pressable>
-
-          <Pressable onPress={() => router.navigate('/(tabs)')} style={styles.secondaryButton}>
-            <Feather color={palette.mutedStrong} name="home" size={15} />
-            <Text style={styles.secondaryButtonText}>Back to Home</Text>
-          </Pressable>
-        </View>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
@@ -128,34 +157,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 1.2,
   },
-  checkLabel: {
-    color: palette.mutedStrong,
-    fontSize: type.tiny,
-    width: 88,
-  },
-  checkList: {
-    gap: 12,
-    marginTop: 22,
-  },
-  checkRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 10,
-  },
-  checkValue: {
-    color: palette.success,
-    fontSize: 12,
-    fontWeight: '700',
-    width: 34,
-  },
   content: {
-    paddingBottom: 28,
-    paddingHorizontal: 14,
-  },
-  divider: {
-    backgroundColor: palette.border,
-    height: 1,
-    marginTop: 22,
+    alignSelf: 'center',
+    maxWidth: layout.maxWidth,
+    paddingBottom: layout.bottomPadding,
+    paddingHorizontal: layout.screenPaddingWide,
     width: '100%',
   },
   eyebrow: {
@@ -163,6 +169,19 @@ const styles = StyleSheet.create({
     fontSize: type.label,
     letterSpacing: 2.2,
     marginTop: 2,
+  },
+  errorCard: {
+    alignItems: 'flex-start',
+    backgroundColor: '#2f1116',
+    borderColor: '#8f2d37',
+    borderWidth: 1,
+    marginTop: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  errorText: {
+    color: '#ff9ea8',
+    fontSize: type.body,
   },
   heroCard: {
     alignItems: 'flex-start',
@@ -175,112 +194,84 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 16,
   },
-  integrityCopy: {
+  loadingCard: {
+    alignItems: 'center',
+    backgroundColor: palette.panel,
+    borderColor: palette.border,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  loadingText: {
     color: palette.mutedStrong,
-    fontSize: 15,
-    lineHeight: 22,
-    marginTop: 8,
-  },
-  integrityCopyWrap: {
-    flex: 1,
-    paddingLeft: 16,
-  },
-  integrityRow: {
-    flexDirection: 'row',
-    marginTop: 18,
-  },
-  integrityTitle: {
-    color: palette.text,
-    fontSize: 24,
-    fontWeight: '700',
-  },
-  logDetail: {
-    color: palette.text,
-    flex: 1,
-    fontSize: 15,
-  },
-  logDot: {
-    backgroundColor: palette.warning,
-    borderRadius: 99,
-    height: 4,
-    marginTop: 6,
-    width: 4,
-  },
-  logList: {
-    gap: 12,
-    marginBottom: 26,
-    marginTop: 18,
-  },
-  logRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  logTime: {
-    color: '#6f8fbc',
-    fontSize: 13,
-    width: 36,
+    fontSize: type.body,
   },
   meta: {
     color: palette.muted,
-    fontSize: 13,
+    fontSize: type.body,
     marginTop: 8,
   },
-  primaryButton: {
-    alignItems: 'center',
-    backgroundColor: '#3ad5cb',
-    flexDirection: 'row',
-    gap: 10,
-    justifyContent: 'center',
-    marginBottom: 12,
-    paddingVertical: 16,
+  remarkCard: {
+    backgroundColor: palette.panel,
+    borderColor: palette.border,
+    borderWidth: 1,
+    marginTop: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
   },
-  primaryButtonText: {
-    color: '#032228',
-    fontSize: 17,
-    fontWeight: '800',
-  },
-  ringCutout: {
-    backgroundColor: palette.background,
-    borderRadius: 99,
-    height: 24,
-    position: 'absolute',
-    right: -3,
-    top: -3,
-    width: 24,
-  },
-  ringInner: {
-    alignItems: 'center',
-    backgroundColor: palette.background,
-    borderRadius: 999,
-    height: 78,
-    justifyContent: 'center',
-    width: 78,
-  },
-  ringOuter: {
-    alignItems: 'center',
-    borderColor: '#26dd88',
-    borderRadius: 999,
-    borderWidth: 6,
-    height: 90,
-    justifyContent: 'center',
-    width: 90,
-  },
-  ringScale: {
+  remarkCopy: {
     color: palette.mutedStrong,
-    fontSize: type.tiny,
-    marginTop: 2,
+    fontSize: type.bodyLarge,
+    lineHeight: 22,
+    marginTop: 8,
   },
-  ringValue: {
-    color: palette.success,
-    fontSize: 24,
-    fontWeight: '800',
+  remarkTitle: {
+    color: palette.text,
+    fontSize: type.bodyLarge,
+    fontWeight: '700',
   },
-  ringWrap: {
-    justifyContent: 'center',
+  retryButton: {
+    borderColor: '#b34954',
+    borderWidth: 1,
+    marginTop: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  retryButtonText: {
+    color: '#ff9ea8',
+    fontSize: type.body,
+    fontWeight: '700',
   },
   safeArea: {
     backgroundColor: palette.background,
     flex: 1,
+  },
+  scoreCard: {
+    alignItems: 'center',
+    backgroundColor: palette.panel,
+    borderColor: palette.border,
+    borderWidth: 1,
+    marginTop: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 22,
+  },
+  scoreLabel: {
+    color: palette.success,
+    fontSize: type.title,
+    fontWeight: '700',
+    marginTop: 8,
+  },
+  scoreMeta: {
+    color: palette.mutedStrong,
+    fontSize: type.body,
+    marginTop: 8,
+  },
+  scoreValue: {
+    color: palette.teal,
+    fontSize: 46,
+    fontWeight: '800',
   },
   secondaryButton: {
     alignItems: 'center',
@@ -289,11 +280,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
     justifyContent: 'center',
-    paddingVertical: 14,
+    marginTop: 18,
+    paddingVertical: 13,
   },
   secondaryButtonText: {
     color: palette.mutedStrong,
-    fontSize: 16,
+    fontSize: type.bodyLarge,
   },
   sectionBlock: {
     borderTopColor: palette.border,
@@ -305,43 +297,9 @@ const styles = StyleSheet.create({
     fontSize: type.label,
     letterSpacing: 2,
   },
-  statCard: {
-    backgroundColor: palette.panel,
-    borderColor: palette.border,
-    borderWidth: 1,
-    flex: 1,
-    gap: 6,
-    minHeight: 74,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-  },
-  statLabel: {
-    color: palette.mutedStrong,
-    fontSize: type.tiny,
-    letterSpacing: 1.1,
-  },
-  statValue: {
-    color: palette.teal,
-    fontSize: 24,
-    fontWeight: '800',
-  },
-  statsRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 22,
-  },
-  track: {
-    backgroundColor: '#203050',
-    flex: 1,
-    height: 2,
-  },
-  trackFill: {
-    backgroundColor: palette.success,
-    height: 2,
-  },
   title: {
     color: palette.text,
-    fontSize: 18,
+    fontSize: type.title,
     fontWeight: '800',
     marginTop: 10,
   },

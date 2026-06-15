@@ -2,7 +2,7 @@ import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { palette, type } from '@/constants/design';
+import { layout, palette, type } from '@/constants/design';
 
 const summary = [
   { label: 'SESSIONS', value: '12', valueColor: palette.warning },
@@ -94,8 +94,11 @@ export default function InvigilatorReportsScreen() {
 
 const styles = StyleSheet.create({
   content: {
-    paddingBottom: 28,
-    paddingHorizontal: 14,
+    alignSelf: 'center',
+    maxWidth: layout.maxWidth,
+    paddingBottom: layout.bottomPadding,
+    paddingHorizontal: layout.screenPaddingWide,
+    width: '100%',
   },
   exportButton: {
     alignItems: 'center',
@@ -109,7 +112,7 @@ const styles = StyleSheet.create({
   },
   exportButtonText: {
     color: '#1b1200',
-    fontSize: 15,
+    fontSize: type.body,
     fontWeight: '800',
   },
   exportCard: {
@@ -125,12 +128,12 @@ const styles = StyleSheet.create({
   },
   exportCopy: {
     color: palette.mutedStrong,
-    fontSize: 13,
+    fontSize: type.body,
     marginTop: 6,
   },
   exportTitle: {
     color: palette.text,
-    fontSize: 18,
+    fontSize: type.title,
     fontWeight: '700',
   },
   eyebrow: {
@@ -162,7 +165,7 @@ const styles = StyleSheet.create({
   },
   reportCourse: {
     color: palette.text,
-    fontSize: 19,
+    fontSize: type.title,
     fontWeight: '700',
   },
   reportDate: {
@@ -204,8 +207,8 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     color: palette.mutedStrong,
-    fontSize: 15,
-    lineHeight: 24,
+    fontSize: type.bodyLarge,
+    lineHeight: 22,
     marginTop: 12,
   },
   summaryCard: {
@@ -214,9 +217,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flex: 1,
     gap: 8,
-    minHeight: 74,
+    minHeight: 68,
     paddingHorizontal: 12,
-    paddingVertical: 12,
+    paddingVertical: 11,
   },
   summaryLabel: {
     color: palette.mutedStrong,
@@ -229,12 +232,12 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   summaryValue: {
-    fontSize: 28,
+    fontSize: type.display,
     fontWeight: '800',
   },
   title: {
     color: palette.text,
-    fontSize: 28,
+    fontSize: type.display,
     fontWeight: '800',
     marginTop: 10,
   },

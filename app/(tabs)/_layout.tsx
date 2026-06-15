@@ -3,7 +3,7 @@ import { Tabs } from 'expo-router';
 import React from 'react';
 
 import { HapticTab } from '@/components/haptic-tab';
-import { palette, type } from '@/constants/design';
+import { layout, palette, type } from '@/constants/design';
 
 export default function TabLayout() {
   return (
@@ -15,22 +15,22 @@ export default function TabLayout() {
         tabBarButton: HapticTab,
         tabBarInactiveTintColor: '#6b7f9c',
         tabBarItemStyle: {
-          paddingTop: 6,
+          paddingTop: layout.tabBarPaddingTop,
         },
         tabBarLabelStyle: {
           fontSize: type.tiny,
           fontWeight: '700',
-          letterSpacing: 1.4,
-          marginTop: 2,
+          letterSpacing: 1.1,
+          marginTop: 1,
           textTransform: 'uppercase',
         },
         tabBarStyle: {
           backgroundColor: palette.background,
           borderTopColor: palette.border,
           borderTopWidth: 1,
-          height: 70,
-          paddingBottom: 10,
-          paddingTop: 8,
+          height: layout.tabBarHeight,
+          paddingBottom: layout.tabBarPaddingBottom,
+          paddingTop: layout.tabBarPaddingTop + 1,
         },
       }}>
       <Tabs.Screen

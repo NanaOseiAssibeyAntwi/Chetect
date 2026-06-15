@@ -4,7 +4,7 @@ import { ComponentProps } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { palette, type } from '@/constants/design';
+import { layout, palette, type } from '@/constants/design';
 
 type ProfileIconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
 
@@ -42,7 +42,7 @@ export default function ProfileScreen() {
           </View>
           <View style={styles.heroText}>
             <Text style={styles.name}>Kwame Asante</Text>
-            <Text style={styles.meta}>UG/CS/2021/0042</Text>
+            <Text style={styles.meta}>KNUST/CS/2021/0042</Text>
             <Text style={styles.metaSmall}>DEPT: Computer Science</Text>
           </View>
         </View>
@@ -129,9 +129,12 @@ const styles = StyleSheet.create({
     width: 28,
   },
   content: {
+    alignSelf: 'center',
     flexGrow: 1,
+    maxWidth: layout.maxWidth,
     paddingBottom: 16,
-    paddingHorizontal: 14,
+    paddingHorizontal: layout.screenPaddingWide,
+    width: '100%',
   },
   eyebrow: {
     color: palette.mutedStrong,
@@ -140,7 +143,7 @@ const styles = StyleSheet.create({
   },
   footerSpacer: {
     flex: 1,
-    minHeight: 140,
+    minHeight: layout.footerSpacer,
   },
   group: {
     borderTopColor: palette.border,
@@ -174,7 +177,7 @@ const styles = StyleSheet.create({
   },
   itemLabel: {
     color: palette.text,
-    fontSize: 16,
+    fontSize: type.bodyLarge,
     fontWeight: '700',
   },
   itemRow: {
@@ -202,7 +205,7 @@ const styles = StyleSheet.create({
   },
   name: {
     color: palette.text,
-    fontSize: 22,
+    fontSize: type.title + 2,
     fontWeight: '800',
   },
   safeArea: {
@@ -224,11 +227,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
     justifyContent: 'center',
-    paddingVertical: 16,
+    paddingVertical: 14,
   },
   signOutText: {
     color: '#ff3d4f',
-    fontSize: 18,
+    fontSize: type.bodyLarge,
     fontWeight: '700',
   },
   statCard: {
@@ -237,9 +240,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flex: 1,
     gap: 8,
-    minHeight: 74,
+    minHeight: 68,
     paddingHorizontal: 12,
-    paddingVertical: 12,
+    paddingVertical: 11,
   },
   statLabel: {
     color: palette.mutedStrong,
@@ -248,7 +251,7 @@ const styles = StyleSheet.create({
   },
   statValue: {
     color: palette.teal,
-    fontSize: 28,
+    fontSize: type.display,
     fontWeight: '800',
   },
   statsRow: {

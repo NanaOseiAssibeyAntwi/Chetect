@@ -1,3 +1,17 @@
+import { Dimensions, PixelRatio } from 'react-native';
+
+const { height, width } = Dimensions.get('window');
+const shortEdge = Math.min(width, height);
+const longEdge = Math.max(width, height);
+
+const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+const widthScale = clamp(shortEdge / 390, 0.92, 1);
+const heightScale = clamp(longEdge / 844, 0.94, 1);
+const uiScale = Math.min(widthScale, heightScale);
+
+const normalize = (size: number, factor = uiScale) =>
+  Math.round(PixelRatio.roundToNearestPixel(size * factor));
+
 export const palette = {
   background: '#030712',
   backgroundAlt: '#07111f',
@@ -18,10 +32,27 @@ export const palette = {
   success: '#28ef8d',
 };
 
+export const layout = {
+  bottomPadding: normalize(26, heightScale),
+  cardGap: normalize(10),
+  footerSpacer: normalize(shortEdge < 360 ? 104 : 128, heightScale),
+  heroTop: normalize(shortEdge < 360 ? 30 : 36, heightScale),
+  maxWidth: shortEdge >= 768 ? 560 : 480,
+  screenPadding: normalize(shortEdge < 360 ? 14 : 16),
+  screenPaddingWide: normalize(shortEdge < 360 ? 12 : 14),
+  sectionGap: normalize(18, heightScale),
+  tabBarHeight: normalize(shortEdge < 360 ? 62 : 66, heightScale),
+  tabBarPaddingBottom: normalize(8, heightScale),
+  tabBarPaddingTop: normalize(6, heightScale),
+};
+
 export const type = {
-  hero: 56,
-  title: 20,
-  body: 13,
-  label: 10,
-  tiny: 9,
+  body: normalize(13),
+  bodyLarge: normalize(15),
+  display: normalize(26),
+  hero: normalize(shortEdge < 360 ? 42 : 48),
+  label: normalize(10),
+  subtitle: normalize(15),
+  tiny: normalize(9),
+  title: normalize(20),
 };

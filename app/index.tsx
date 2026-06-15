@@ -3,7 +3,7 @@ import { router } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { palette, type } from '@/constants/design';
+import { layout, palette, type } from '@/constants/design';
 
 const roles = [
   {
@@ -94,37 +94,40 @@ const styles = StyleSheet.create({
     letterSpacing: 1.8,
   },
   content: {
+    alignSelf: 'center',
     flexGrow: 1,
-    paddingBottom: 36,
-    paddingHorizontal: 18,
-    paddingTop: 6,
+    maxWidth: layout.maxWidth,
+    paddingBottom: layout.bottomPadding + 6,
+    paddingHorizontal: layout.screenPadding,
+    paddingTop: 4,
+    width: '100%',
   },
   divider: {
     backgroundColor: palette.border,
     height: 1,
-    marginBottom: 30,
-    marginTop: 38,
+    marginBottom: 24,
+    marginTop: layout.heroTop - 4,
     width: '100%',
   },
   heroAccent: {
     color: palette.teal,
   },
   heroBlock: {
-    marginTop: 42,
+    marginTop: layout.heroTop,
   },
   heroCopy: {
     color: palette.mutedStrong,
-    fontSize: 15,
-    lineHeight: 28,
-    marginTop: 22,
-    maxWidth: 330,
+    fontSize: type.bodyLarge,
+    lineHeight: 24,
+    marginTop: 18,
+    maxWidth: 312,
   },
   heroLine: {
     color: palette.text,
     fontSize: type.hero,
     fontWeight: '800',
-    letterSpacing: -1.9,
-    lineHeight: 62,
+    letterSpacing: -1.5,
+    lineHeight: type.hero + 7,
   },
   roleCard: {
     alignItems: 'center',
@@ -132,8 +135,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: 'row',
     gap: 14,
-    minHeight: 86,
-    paddingHorizontal: 18,
+    minHeight: 78,
+    paddingHorizontal: 16,
   },
   roleCardPressed: {
     opacity: 0.92,
@@ -142,7 +145,7 @@ const styles = StyleSheet.create({
   roleDescription: {
     color: palette.mutedStrong,
     fontSize: type.label,
-    letterSpacing: 1.6,
+    letterSpacing: 1.4,
   },
   roleIconBox: {
     alignItems: 'center',
@@ -152,7 +155,7 @@ const styles = StyleSheet.create({
     width: 32,
   },
   roleList: {
-    gap: 12,
+    gap: layout.cardGap,
   },
   roleTextBlock: {
     flex: 1,
@@ -160,7 +163,7 @@ const styles = StyleSheet.create({
   },
   roleTitle: {
     color: palette.text,
-    fontSize: 18,
+    fontSize: type.title,
     fontWeight: '700',
   },
   safeArea: {
@@ -170,7 +173,7 @@ const styles = StyleSheet.create({
   sectionLabel: {
     color: palette.mutedStrong,
     fontSize: type.label,
-    letterSpacing: 2.5,
-    marginBottom: 16,
+    letterSpacing: 2.1,
+    marginBottom: 14,
   },
 });
