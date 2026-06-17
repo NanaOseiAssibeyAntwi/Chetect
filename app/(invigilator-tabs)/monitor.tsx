@@ -1,5 +1,6 @@
 import { Feather } from '@expo/vector-icons';
 import { ResizeMode, Video } from 'expo-av';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useFocusEffect } from '@react-navigation/native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -112,6 +113,42 @@ function formatTimestamp(isoInput: string) {
   });
 }
 
+function toClipKey(eventId: string, segmentPath: string) {
+  return `${eventId}-${segmentPath}`;
+}
+
+function toClipCachePath(eventId: string, segmentPath: string) {
+  const cacheRoot = FileSystem.cacheDirectory ?? FileSystem.documentDirectory ?? '';
+  if (!cacheRoot) {
+    return null;
+  }
+
+  const segmentWithoutQuery = segmentPath.split('?')[0] ?? segmentPath;
+  const extensionMatch = /\.[a-z0-9]+$/i.exec(segmentWithoutQuery);
+  const extension = extensionMatch?.[0]?.toLowerCase() ?? '.mp4';
+  const safeToken = `${eventId}-${segmentPath}`.replace(/[^a-z0-9_-]/gi, '_').slice(0, 120);
+  return `${cacheRoot}suspicious-${safeToken}${extension}`;
+}
+
+function toPlaybackErrorText(value: unknown) {
+  if (typeof value === 'string' && value.trim()) {
+    return value.trim();
+  }
+
+  if (value && typeof value === 'object') {
+    try {
+      const asJson = JSON.stringify(value);
+      if (asJson && asJson !== '{}') {
+        return asJson;
+      }
+    } catch {
+      // Fall through to the generic error.
+    }
+  }
+
+  return 'Unknown playback error';
+}
+
 export default function InvigilatorMonitorScreen() {
   const params = useLocalSearchParams<{ examId?: string | string[] }>();
   const examId = useMemo(
@@ -125,7 +162,12 @@ export default function InvigilatorMonitorScreen() {
   const [errorMessage, setErrorMessage] = useState('');
   const [suspiciousEvents, setSuspiciousEvents] = useState<InvigilatorSuspiciousEvent[]>([]);
   const [openEventId, setOpenEventId] = useState('');
+  const [clipPlaybackErrors, setClipPlaybackErrors] = useState<Record<string, string>>({});
+  const [clipLocalUris, setClipLocalUris] = useState<Record<string, string>>({});
+  const [clipDownloadsInProgress, setClipDownloadsInProgress] = useState<Record<string, boolean>>({});
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clipLocalUrisRef = useRef<Record<string, string>>({});
+  const clipDownloadsInProgressRef = useRef<Record<string, boolean>>({});
 
   const loadAll = useCallback(
     async (showLoading = true) => {
@@ -152,6 +194,7 @@ export default function InvigilatorMonitorScreen() {
         ]);
         setMonitorData(monitorResult);
         setSuspiciousEvents(eventsResult);
+        setClipPlaybackErrors({});
       } catch (error) {
         setErrorMessage(error instanceof Error ? error.message : 'Unable to load monitor data.');
       } finally {
@@ -168,6 +211,98 @@ export default function InvigilatorMonitorScreen() {
       return undefined;
     }, [loadAll])
   );
+
+  useEffect(() => {
+    clipLocalUrisRef.current = clipLocalUris;
+  }, [clipLocalUris]);
+
+  useEffect(() => {
+    clipDownloadsInProgressRef.current = clipDownloadsInProgress;
+  }, [clipDownloadsInProgress]);
+
+  useEffect(() => {
+    setOpenEventId('');
+    setClipPlaybackErrors({});
+    setClipLocalUris({});
+    setClipDownloadsInProgress({});
+  }, [examId]);
+
+  useEffect(() => {
+    if (!openEventId) {
+      return;
+    }
+
+    const openEvent = suspiciousEvents.find((eventRow) => eventRow.id === openEventId);
+    if (!openEvent || openEvent.segments.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const ensureLocalClipCopies = async () => {
+      for (const segment of openEvent.segments) {
+        if (!segment.videoUrl) {
+          continue;
+        }
+
+        const clipKey = toClipKey(openEvent.id, segment.path);
+        if (clipLocalUrisRef.current[clipKey] || clipDownloadsInProgressRef.current[clipKey]) {
+          continue;
+        }
+
+        setClipDownloadsInProgress((current) => ({
+          ...current,
+          [clipKey]: true,
+        }));
+
+        try {
+          const cachePath = toClipCachePath(openEvent.id, segment.path);
+          if (!cachePath) {
+            throw new Error('Local cache path is unavailable on this device.');
+          }
+
+          const existing = await FileSystem.getInfoAsync(cachePath);
+          if (!existing.exists || existing.isDirectory) {
+            await FileSystem.downloadAsync(segment.videoUrl, cachePath);
+          }
+
+          if (cancelled) {
+            return;
+          }
+
+          setClipLocalUris((current) => ({
+            ...current,
+            [clipKey]: cachePath,
+          }));
+        } catch (error) {
+          if (cancelled) {
+            return;
+          }
+
+          setClipPlaybackErrors((current) => ({
+            ...current,
+            [clipKey]: `Unable to download this clip for local playback: ${toPlaybackErrorText(error)}`,
+          }));
+        } finally {
+          if (cancelled) {
+            return;
+          }
+
+          setClipDownloadsInProgress((current) => {
+            const next = { ...current };
+            delete next[clipKey];
+            return next;
+          });
+        }
+      }
+    };
+
+    void ensureLocalClipCopies();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [openEventId, suspiciousEvents]);
 
   useEffect(() => {
     if (!examId) {
@@ -457,17 +592,60 @@ export default function InvigilatorMonitorScreen() {
                             <Text style={styles.segmentMeta}>
                               Duration {Math.round(segment.durationSeconds)}s
                             </Text>
-                            {segment.videoUrl ? (
-                              <Video
-                                isLooping
-                                resizeMode={ResizeMode.COVER}
-                                source={{ uri: segment.videoUrl }}
-                                style={styles.segmentVideo}
-                                useNativeControls
-                              />
-                            ) : (
-                              <Text style={styles.clipWaitingText}>Signed URL unavailable for this segment.</Text>
-                            )}
+                            {(() => {
+                              const clipKey = toClipKey(eventRow.id, segment.path);
+                              const localClipUri = clipLocalUris[clipKey] ?? null;
+                              const clipDownloadError = clipPlaybackErrors[clipKey] ?? '';
+                              const isDownloading =
+                                Boolean(clipDownloadsInProgress[clipKey]) && !localClipUri;
+                              if (localClipUri) {
+                                return (
+                                  <>
+                                    <Video
+                                      isLooping
+                                      onError={(error) =>
+                                        setClipPlaybackErrors((current) => ({
+                                          ...current,
+                                          [clipKey]: toPlaybackErrorText(error),
+                                        }))
+                                      }
+                                      resizeMode={ResizeMode.CONTAIN}
+                                      shouldPlay
+                                      source={{ uri: localClipUri }}
+                                      style={styles.segmentVideo}
+                                      useNativeControls
+                                    />
+                                    {clipDownloadError ? (
+                                      <Text style={styles.clipErrorText}>
+                                        Unable to play this clip: {clipDownloadError}
+                                      </Text>
+                                    ) : null}
+                                  </>
+                                );
+                              }
+
+                              if (isDownloading) {
+                                return (
+                                  <Text style={styles.clipWaitingText}>
+                                    Preparing secure clip playback...
+                                  </Text>
+                                );
+                              }
+
+                              if (clipDownloadError) {
+                                return (
+                                  <Text style={styles.clipErrorText}>
+                                    Unable to play this clip: {clipDownloadError}
+                                  </Text>
+                                );
+                              }
+
+                              return (
+                                <Text style={styles.clipWaitingText}>
+                                  Clip download is pending...
+                                </Text>
+                              );
+                            })()}
                           </View>
                         ))
                       )}
@@ -510,6 +688,11 @@ const styles = StyleSheet.create({
     color: '#93abcf',
     fontSize: type.body,
     marginTop: 6,
+  },
+  clipErrorText: {
+    color: '#ff9ea8',
+    fontSize: type.body,
+    marginTop: 8,
   },
   content: {
     alignSelf: 'center',

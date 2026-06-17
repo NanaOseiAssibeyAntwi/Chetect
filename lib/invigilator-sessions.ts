@@ -1049,19 +1049,20 @@ export async function fetchInvigilatorSuspiciousEvents(
               ? segment.publicUrl.trim()
               : null;
 
-          let resolvedVideoUrl = publicUrlFromEvidence;
+          const { data: signedUrlData } = await supabase.storage
+            .from(SUSPICIOUS_CLIP_BUCKET)
+            .createSignedUrl(segment.path, 60 * 60);
+          let resolvedVideoUrl = signedUrlData?.signedUrl ?? null;
+
+          if (!resolvedVideoUrl) {
+            resolvedVideoUrl = publicUrlFromEvidence;
+          }
+
           if (!resolvedVideoUrl) {
             const { data: publicUrlData } = supabase.storage
               .from(SUSPICIOUS_CLIP_BUCKET)
               .getPublicUrl(segment.path);
             resolvedVideoUrl = publicUrlData.publicUrl ?? null;
-          }
-
-          if (!resolvedVideoUrl) {
-            const { data: signedUrlData } = await supabase.storage
-              .from(SUSPICIOUS_CLIP_BUCKET)
-              .createSignedUrl(segment.path, 60 * 60);
-            resolvedVideoUrl = signedUrlData?.signedUrl ?? null;
           }
 
           return {

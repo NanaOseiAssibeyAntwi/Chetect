@@ -177,6 +177,19 @@ function randomId() {
   return Math.random().toString(36).slice(2, 10);
 }
 
+function deriveClipExtensionFromUri(clipUri: string) {
+  const clipUriWithoutQuery = String(clipUri ?? '').split('?')[0] ?? '';
+  const dotIndexInUri = clipUriWithoutQuery.lastIndexOf('.');
+  const extensionFromUri =
+    dotIndexInUri >= 0 ? clipUriWithoutQuery.slice(dotIndexInUri).trim().toLowerCase() : '';
+
+  if (['.mp4', '.mov', '.webm', '.avi', '.3gp', '.3g2'].includes(extensionFromUri)) {
+    return extensionFromUri;
+  }
+
+  return '.mp4';
+}
+
 function toTimestampMs(isoValue: string) {
   const timestamp = new Date(isoValue).getTime();
   return Number.isNaN(timestamp) ? null : timestamp;
@@ -317,7 +330,8 @@ export default function ExamSessionScreen() {
       throw new Error('No proctoring handle was found for clip upload.');
     }
 
-    const path = `${handle.examId}/${handle.studentId}/${handle.analysisSessionId}/segment-${Date.now()}-${randomId()}.mp4`;
+    const clipExtension = deriveClipExtensionFromUri(segment.uri);
+    const path = `${handle.examId}/${handle.studentId}/${handle.analysisSessionId}/segment-${Date.now()}-${randomId()}${clipExtension}`;
     let uploadedSegment: { path: string; publicUrl: string | null };
     try {
       uploadedSegment = await uploadSuspiciousClipSegment({

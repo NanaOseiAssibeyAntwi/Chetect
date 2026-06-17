@@ -1,4 +1,5 @@
 import Constants from 'expo-constants';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
 
 import { supabase } from '@/lib/supabase';
@@ -224,6 +225,53 @@ function inferVideoMimeTypeFromExtension(extension: string) {
     return 'video/3gpp';
   }
   return 'video/mp4';
+}
+
+function inferVideoExtensionFromUri(clipUri: string) {
+  const clipUriWithoutQuery = String(clipUri ?? '').split('?')[0] ?? '';
+  const dotIndexInUri = clipUriWithoutQuery.lastIndexOf('.');
+  const extensionFromUri =
+    dotIndexInUri >= 0 ? clipUriWithoutQuery.slice(dotIndexInUri).trim().toLowerCase() : '';
+
+  if (['.mp4', '.mov', '.webm', '.avi', '.3gp', '.3g2'].includes(extensionFromUri)) {
+    return extensionFromUri;
+  }
+
+  return '.mp4';
+}
+
+async function readLocalFileAsArrayBuffer(fileUri: string) {
+  const info = await FileSystem.getInfoAsync(fileUri);
+  const fileSize = typeof info.size === 'number' ? info.size : 0;
+  if (!info.exists || info.isDirectory || fileSize <= 0) {
+    throw new Error('Suspicious clip segment file is empty or missing.');
+  }
+
+  const base64 = await FileSystem.readAsStringAsync(fileUri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+
+  if (!base64) {
+    throw new Error('Suspicious clip segment file could not be read for upload.');
+  }
+
+  if (typeof globalThis.atob === 'function') {
+    const binary = globalThis.atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+
+    return bytes.buffer;
+  }
+
+  const fallback = await fetch(`data:application/octet-stream;base64,${base64}`);
+  const fallbackBuffer = await fallback.arrayBuffer();
+  if (fallbackBuffer.byteLength <= 0) {
+    throw new Error('Suspicious clip segment upload payload was empty.');
+  }
+
+  return fallbackBuffer;
 }
 
 function rewriteLoopbackConfiguredBaseUrl(configuredUrl: string) {
@@ -1131,15 +1179,12 @@ export async function uploadSuspiciousClipSegment({
 }) {
   await ensureAuthenticatedStorageUploadUser();
 
-  const response = await fetch(clipUri);
-  if (!response.ok) {
-    throw new Error('Unable to read local suspicious clip segment for upload.');
-  }
+  const extension = inferVideoExtensionFromUri(clipUri);
+  const mimeType = inferVideoMimeTypeFromExtension(extension);
+  const clipBytes = await readLocalFileAsArrayBuffer(clipUri);
 
-  const blob = await response.blob();
-
-  const { error } = await supabase.storage.from(SUSPICIOUS_CLIP_BUCKET).upload(path, blob, {
-    contentType: 'video/mp4',
+  const { error } = await supabase.storage.from(SUSPICIOUS_CLIP_BUCKET).upload(path, clipBytes, {
+    contentType: mimeType,
     upsert: false,
   });
 
