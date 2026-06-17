@@ -122,6 +122,10 @@ async function getSchemaStatus({ supabaseUrl, serviceRoleKey }) {
 
 async function runPgSchemaApply({ dbUrl, schemaPath }) {
   const sql = readFileSync(schemaPath, 'utf8');
+  await runPgSql({ dbUrl, sql });
+}
+
+async function runPgSql({ dbUrl, sql }) {
   const parsedUrl = new URL(dbUrl);
   const hasSslMode = parsedUrl.searchParams.has('sslmode');
   const isSupabaseHost = parsedUrl.hostname.endsWith('.supabase.co');
@@ -179,21 +183,49 @@ async function main() {
   const env = getEnv();
 
   const supabaseUrl = env.EXPO_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = env.EXPO_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
+  const serviceRoleKey = env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!supabaseUrl) {
     throw new Error('Missing EXPO_PUBLIC_SUPABASE_URL in .env or environment.');
   }
 
   if (!serviceRoleKey) {
-    throw new Error('Missing EXPO_PUBLIC_SUPABASE_SERVICE_ROLE_KEY in .env or environment.');
+    throw new Error(
+      'Missing SUPABASE_SERVICE_ROLE_KEY in .env or environment.'
+    );
   }
 
   const projectRef = getProjectRef(supabaseUrl);
   console.log(`Target project: ${projectRef}`);
 
-  if (!['status', 'apply'].includes(mode)) {
-    throw new Error(`Unsupported mode "${mode}". Use "status" or "apply".`);
+  if (!['status', 'apply', 'apply-migration'].includes(mode)) {
+    throw new Error(`Unsupported mode "${mode}". Use "status", "apply", or "apply-migration".`);
+  }
+
+  const dbUrl = env.SUPABASE_DB_URL ?? env.DATABASE_URL;
+
+  if (mode === 'apply-migration') {
+    const migrationArg = process.argv[3];
+    if (!migrationArg) {
+      throw new Error('Missing migration path. Use: node ./scripts/supabase-db.mjs apply-migration supabase/migrations/<file>.sql');
+    }
+
+    if (!dbUrl) {
+      throw new Error(
+        'Cannot apply migration without direct SQL access. Add SUPABASE_DB_URL (or DATABASE_URL) using the Supabase session pooler connection string.'
+      );
+    }
+
+    const migrationPath = resolve(process.cwd(), migrationArg);
+    if (!existsSync(migrationPath)) {
+      throw new Error(`Migration file not found: ${migrationPath}`);
+    }
+
+    const sql = readFileSync(migrationPath, 'utf8');
+    console.log(`Applying migration from ${migrationPath} ...`);
+    await runPgSql({ dbUrl, sql });
+    console.log('Migration applied successfully.');
+    return;
   }
 
   const before = await getSchemaStatus({ supabaseUrl, serviceRoleKey });
@@ -214,7 +246,6 @@ async function main() {
     );
   }
 
-  const dbUrl = env.SUPABASE_DB_URL ?? env.DATABASE_URL;
   if (!dbUrl) {
     throw new Error(
       'Cannot apply schema with REST keys alone. Add SUPABASE_DB_URL (or DATABASE_URL) for direct SQL access via psql.'

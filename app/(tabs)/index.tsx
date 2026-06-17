@@ -140,6 +140,10 @@ export default function DashboardScreen() {
                           <View style={styles.liveDot} />
                           <Text style={styles.liveText}>LIVE</Text>
                         </View>
+                      ) : exam.countdownToStart ? (
+                        <View style={styles.waitFlag}>
+                          <Text style={styles.waitText}>{exam.countdownToStart}</Text>
+                        </View>
                       ) : null}
                     </View>
                     <Text style={styles.examTitle}>{exam.title}</Text>
@@ -380,6 +384,18 @@ const styles = StyleSheet.create({
     fontSize: type.tiny,
     fontWeight: '700',
     letterSpacing: 0.8,
+  },
+  waitFlag: {
+    borderColor: '#3d557b',
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+  },
+  waitText: {
+    color: '#90acd9',
+    fontSize: type.tiny,
+    fontWeight: '700',
+    letterSpacing: 0.6,
   },
   loadingCard: {
     alignItems: 'center',

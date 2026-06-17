@@ -232,6 +232,7 @@ create table public.suspicious_events (
   end_frame_index integer not null default 0 check (end_frame_index >= start_frame_index),
   frame_count integer not null default 1 check (frame_count > 0),
   max_score integer check (max_score between 0 and 100),
+  evidence jsonb not null default '{}'::jsonb,
   review_status public.review_status not null default 'open',
   reviewed_by uuid references public.profiles (id) on delete set null,
   reviewed_at timestamptz,
@@ -648,6 +649,87 @@ end;
 $$;
 
 grant execute on function public.submit_exam_attempt(uuid, jsonb) to authenticated;
+
+create or replace function public.sync_exam_lifecycle_statuses()
+returns table (
+  exams_marked_live integer,
+  exams_marked_completed integer,
+  sessions_marked_terminal integer,
+  registrations_marked_terminal integer
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  now_utc timestamptz := timezone('utc', now());
+begin
+  update public.exams
+  set status = 'live'
+  where status = 'scheduled'
+    and scheduled_start <= now_utc
+    and scheduled_end > now_utc;
+  get diagnostics exams_marked_live = row_count;
+
+  update public.exams
+  set status = 'completed'
+  where status in ('scheduled', 'live')
+    and scheduled_end <= now_utc;
+  get diagnostics exams_marked_completed = row_count;
+
+  update public.analysis_sessions as s
+  set
+    status = case
+      when s.status = 'pending' then 'terminated'::public.session_status
+      else 'completed'::public.session_status
+    end,
+    ended_at = coalesce(s.ended_at, now_utc)
+  from public.exams e
+  where e.id = s.exam_id
+    and e.status = 'completed'
+    and s.status in ('pending', 'active', 'paused');
+  get diagnostics sessions_marked_terminal = row_count;
+
+  update public.exam_registrations as er
+  set
+    registration_status = case
+      when exists (
+        select 1
+        from public.exam_attempts a
+        where a.exam_id = er.exam_id
+          and a.student_id = er.student_id
+          and a.status = 'submitted'
+      ) then 'submitted'
+      when er.registration_status in ('registered', 'checked_in', 'active') then 'completed'
+      else er.registration_status
+    end,
+    submitted_at = case
+      when exists (
+        select 1
+        from public.exam_attempts a
+        where a.exam_id = er.exam_id
+          and a.student_id = er.student_id
+          and a.status = 'submitted'
+      ) and er.submitted_at is null
+      then now_utc
+      else er.submitted_at
+    end
+  from public.exams e
+  where e.id = er.exam_id
+    and e.status = 'completed'
+    and er.registration_status in ('registered', 'checked_in', 'active', 'submitted');
+  get diagnostics registrations_marked_terminal = row_count;
+
+  return query
+  select
+    exams_marked_live,
+    exams_marked_completed,
+    sessions_marked_terminal,
+    registrations_marked_terminal;
+end;
+$$;
+
+grant execute on function public.sync_exam_lifecycle_statuses() to authenticated;
 
 create trigger set_profiles_updated_at
 before update on public.profiles
@@ -1139,6 +1221,68 @@ on public.audit_logs
 for insert
 to authenticated
 with check (public.is_invigilator());
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('suspiciousVideos', 'suspiciousVideos', true, 52428800, array['video/mp4'])
+on conflict (id) do update
+set
+  name = excluded.name,
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "suspiciousVideos_public_read" on storage.objects;
+create policy "suspiciousVideos_public_read"
+on storage.objects
+for select
+to public
+using (bucket_id = 'suspiciousVideos');
+
+drop policy if exists "suspiciousVideos_authenticated_upload" on storage.objects;
+create policy "suspiciousVideos_authenticated_upload"
+on storage.objects
+for insert
+to authenticated
+with check (
+  bucket_id = 'suspiciousVideos'
+  and (
+    public.is_invigilator()
+    or coalesce((storage.foldername(name))[2], '') = auth.uid()::text
+  )
+);
+
+drop policy if exists "suspiciousVideos_owner_update" on storage.objects;
+create policy "suspiciousVideos_owner_update"
+on storage.objects
+for update
+to authenticated
+using (
+  bucket_id = 'suspiciousVideos'
+  and (
+    public.is_invigilator()
+    or coalesce((storage.foldername(name))[2], '') = auth.uid()::text
+  )
+)
+with check (
+  bucket_id = 'suspiciousVideos'
+  and (
+    public.is_invigilator()
+    or coalesce((storage.foldername(name))[2], '') = auth.uid()::text
+  )
+);
+
+drop policy if exists "suspiciousVideos_owner_delete" on storage.objects;
+create policy "suspiciousVideos_owner_delete"
+on storage.objects
+for delete
+to authenticated
+using (
+  bucket_id = 'suspiciousVideos'
+  and (
+    public.is_invigilator()
+    or coalesce((storage.foldername(name))[2], '') = auth.uid()::text
+  )
+);
 
 create or replace view public.session_report_view as
 select

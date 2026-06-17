@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { syncExamLifecycleStatuses } from '@/lib/exam-lifecycle';
 
 type AppRole = 'student' | 'invigilator' | 'admin';
 type ExamStatus = 'draft' | 'scheduled' | 'live' | 'completed' | 'cancelled';
@@ -31,6 +32,7 @@ type NotificationRow = {
 };
 
 export type StudentDashboardExam = {
+  countdownToStart: string | null;
   examId: string;
   isLive: boolean;
   meta: string;
@@ -127,6 +129,33 @@ function formatActivityDate(startIso: string) {
   });
 }
 
+function formatStartsIn(startIso: string, nowTimestamp: number) {
+  const startTimestamp = new Date(startIso).getTime();
+  if (Number.isNaN(startTimestamp)) {
+    return null;
+  }
+
+  const diffMs = startTimestamp - nowTimestamp;
+  if (diffMs <= 0) {
+    return 'Starting now';
+  }
+
+  const totalMinutes = Math.ceil(diffMs / (60 * 1000));
+  const days = Math.floor(totalMinutes / (24 * 60));
+  const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+  const minutes = totalMinutes % 60;
+
+  if (days > 0) {
+    return `Starts in ${days}d ${hours}h`;
+  }
+
+  if (hours > 0) {
+    return `Starts in ${hours}h ${minutes}m`;
+  }
+
+  return `Starts in ${minutes}m`;
+}
+
 export async function fetchStudentDashboardData(): Promise<StudentDashboardData> {
   const {
     data: { user },
@@ -150,6 +179,8 @@ export async function fetchStudentDashboardData(): Promise<StudentDashboardData>
   if (profile.role !== 'student') {
     throw new Error('This account is not authorized for student dashboard access.');
   }
+
+  await syncExamLifecycleStatuses();
 
   const [{ data: scheduleRows, error: scheduleError }, { data: unreadRows, error: unreadError }] =
     await Promise.all([
@@ -179,13 +210,26 @@ export async function fetchStudentDashboardData(): Promise<StudentDashboardData>
 
   const rows = scheduleRows ?? [];
   const now = Date.now();
-  const examRows = rows.filter((row) => row.status === 'live' || row.status === 'scheduled');
+  const examRows = rows.filter((row) => {
+    if (row.status !== 'live' && row.status !== 'scheduled') {
+      return false;
+    }
+
+    const endTime = new Date(row.scheduled_end).getTime();
+    const hasEnded = !Number.isNaN(endTime) && endTime <= now;
+    return !hasEnded;
+  });
+
   const exams = examRows.map<StudentDashboardExam>((row) => {
     const startTime = new Date(row.scheduled_start).getTime();
-    const isLive = row.status === 'live' || (!Number.isNaN(startTime) && startTime <= now);
+    const endTime = new Date(row.scheduled_end).getTime();
+    const hasStarted = !Number.isNaN(startTime) && startTime <= now;
+    const hasEnded = !Number.isNaN(endTime) && endTime <= now;
+    const isLive = !hasEnded && (row.status === 'live' || hasStarted);
 
     return {
       code: row.course_code,
+      countdownToStart: isLive ? null : formatStartsIn(row.scheduled_start, now),
       examId: row.exam_id,
       isLive,
       meta: formatExamMeta(row.scheduled_start, row.scheduled_end),
@@ -196,10 +240,17 @@ export async function fetchStudentDashboardData(): Promise<StudentDashboardData>
 
   const completedRows = rows
     .filter(
-      (row) =>
-        row.status === 'completed' ||
-        isDoneRegistrationStatus(row.registration_status) ||
-        isDoneSessionStatus(row.latest_session_status)
+      (row) => {
+        const endTime = new Date(row.scheduled_end).getTime();
+        const hasEnded = !Number.isNaN(endTime) && endTime <= now;
+
+        return (
+          row.status === 'completed' ||
+          hasEnded ||
+          isDoneRegistrationStatus(row.registration_status) ||
+          isDoneSessionStatus(row.latest_session_status)
+        );
+      }
     )
     .sort(
       (left, right) =>

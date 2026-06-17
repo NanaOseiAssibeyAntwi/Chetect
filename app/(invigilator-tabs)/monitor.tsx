@@ -1,7 +1,8 @@
 import { Feather } from '@expo/vector-icons';
+import { ResizeMode, Video } from 'expo-av';
 import { useFocusEffect } from '@react-navigation/native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -15,10 +16,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { layout, palette, type } from '@/constants/design';
 import {
   fetchInvigilatorMonitorData,
+  fetchInvigilatorSuspiciousEvents,
   type InvigilatorMonitorData,
   type InvigilatorMonitorStudent,
+  type InvigilatorSuspiciousEvent,
   type MonitorRiskLevel,
 } from '@/lib/invigilator-sessions';
+import { supabase } from '@/lib/supabase';
 
 const filters = ['all', 'flagged', 'critical'] as const;
 type MonitorFilter = (typeof filters)[number];
@@ -87,6 +91,27 @@ function applyFilter(students: InvigilatorMonitorStudent[], filter: MonitorFilte
   return students;
 }
 
+function formatSeconds(value: number) {
+  const safe = Math.max(0, Math.trunc(value));
+  const minutes = Math.floor(safe / 60);
+  const seconds = safe % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function formatTimestamp(isoInput: string) {
+  const timestamp = new Date(isoInput);
+  if (Number.isNaN(timestamp.getTime())) {
+    return 'Unknown time';
+  }
+
+  return timestamp.toLocaleString(undefined, {
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    month: 'short',
+  });
+}
+
 export default function InvigilatorMonitorScreen() {
   const params = useLocalSearchParams<{ examId?: string | string[] }>();
   const examId = useMemo(
@@ -96,35 +121,100 @@ export default function InvigilatorMonitorScreen() {
   const [monitorData, setMonitorData] = useState<InvigilatorMonitorData | null>(null);
   const [activeFilter, setActiveFilter] = useState<MonitorFilter>('all');
   const [isLoading, setIsLoading] = useState(true);
+  const [isEventsLoading, setIsEventsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
+  const [suspiciousEvents, setSuspiciousEvents] = useState<InvigilatorSuspiciousEvent[]>([]);
+  const [openEventId, setOpenEventId] = useState('');
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const loadMonitorData = useCallback(async () => {
-    if (!examId) {
-      setMonitorData(null);
-      setErrorMessage('Open a session from the dashboard to monitor students.');
-      setIsLoading(false);
-      return;
-    }
+  const loadAll = useCallback(
+    async (showLoading = true) => {
+      if (!examId) {
+        setMonitorData(null);
+        setSuspiciousEvents([]);
+        setErrorMessage('Open a session from the dashboard to monitor students.');
+        setIsLoading(false);
+        setIsEventsLoading(false);
+        return;
+      }
 
-    setIsLoading(true);
-    setErrorMessage('');
+      if (showLoading) {
+        setIsLoading(true);
+        setIsEventsLoading(true);
+      }
 
-    try {
-      const result = await fetchInvigilatorMonitorData(examId);
-      setMonitorData(result);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Unable to load monitor data.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [examId]);
+      setErrorMessage('');
+
+      try {
+        const [monitorResult, eventsResult] = await Promise.all([
+          fetchInvigilatorMonitorData(examId),
+          fetchInvigilatorSuspiciousEvents(examId),
+        ]);
+        setMonitorData(monitorResult);
+        setSuspiciousEvents(eventsResult);
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : 'Unable to load monitor data.');
+      } finally {
+        setIsLoading(false);
+        setIsEventsLoading(false);
+      }
+    },
+    [examId]
+  );
 
   useFocusEffect(
     useCallback(() => {
-      void loadMonitorData();
+      void loadAll(true);
       return undefined;
-    }, [loadMonitorData])
+    }, [loadAll])
   );
+
+  useEffect(() => {
+    if (!examId) {
+      return;
+    }
+
+    const scheduleRefresh = () => {
+      if (refreshTimerRef.current) {
+        clearTimeout(refreshTimerRef.current);
+      }
+
+      refreshTimerRef.current = setTimeout(() => {
+        void loadAll(false);
+      }, 300);
+    };
+
+    const channel = supabase
+      .channel(`invigilator-monitor-${examId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          filter: `exam_id=eq.${examId}`,
+          schema: 'public',
+          table: 'analysis_sessions',
+        },
+        scheduleRefresh
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          filter: `exam_id=eq.${examId}`,
+          schema: 'public',
+          table: 'suspicious_events',
+        },
+        scheduleRefresh
+      )
+      .subscribe();
+
+    return () => {
+      if (refreshTimerRef.current) {
+        clearTimeout(refreshTimerRef.current);
+      }
+      void supabase.removeChannel(channel);
+    };
+  }, [examId, loadAll]);
 
   const filteredStudents = useMemo(
     () => applyFilter(monitorData?.students ?? [], activeFilter),
@@ -186,7 +276,7 @@ export default function InvigilatorMonitorScreen() {
         {errorMessage ? (
           <View style={styles.errorCard}>
             <Text style={styles.errorText}>{errorMessage}</Text>
-            <Pressable onPress={() => void loadMonitorData()} style={styles.retryButton}>
+            <Pressable onPress={() => void loadAll(true)} style={styles.retryButton}>
               <Text style={styles.retryButtonText}>Retry</Text>
             </Pressable>
           </View>
@@ -282,6 +372,112 @@ export default function InvigilatorMonitorScreen() {
             })}
           </View>
         )}
+
+        <View style={styles.eventsHeader}>
+          <Text style={styles.eventsTitle}>SUSPICIOUS CLIPS</Text>
+          <Text style={styles.eventsCount}>{suspiciousEvents.length} flags</Text>
+        </View>
+
+        {isEventsLoading ? (
+          <View style={styles.loadingCard}>
+            <ActivityIndicator color={palette.warning} size="small" />
+            <Text style={styles.loadingText}>Loading suspicious recordings...</Text>
+          </View>
+        ) : null}
+
+        {!isEventsLoading && suspiciousEvents.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyTitle}>No suspicious clips yet</Text>
+            <Text style={styles.emptyCopy}>
+              When students are flagged, 5 seconds before and after each event will appear here.
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.eventsList}>
+            {suspiciousEvents.map((eventRow) => {
+              const isOpen = openEventId === eventRow.id;
+              const risk = getRiskPresentation(eventRow.riskLevel);
+              const evidenceWindowLabel =
+                eventRow.windowStartIso && eventRow.windowEndIso
+                  ? `${formatTimestamp(eventRow.windowStartIso)} - ${formatTimestamp(eventRow.windowEndIso)}`
+                  : null;
+
+              return (
+                <View key={eventRow.id} style={styles.eventCard}>
+                  <View style={styles.eventHeader}>
+                    <View style={styles.eventHeaderLeft}>
+                      <View
+                        style={[
+                          styles.levelBadge,
+                          {
+                            backgroundColor: `${risk.color}20`,
+                            borderColor: `${risk.color}60`,
+                          },
+                        ]}>
+                        <Text style={[styles.levelText, { color: risk.color }]}>{risk.label}</Text>
+                      </View>
+                      <Text style={styles.eventStudent}>
+                        {eventRow.studentName} - {eventRow.studentInstitutionalId}
+                      </Text>
+                    </View>
+                    <Text style={styles.eventTime}>{formatTimestamp(eventRow.createdAt)}</Text>
+                  </View>
+
+                  <Text style={styles.eventReason}>{eventRow.reason}</Text>
+                  <Text style={styles.eventMeta}>
+                    EVENT WINDOW {formatSeconds(eventRow.startTimestampSeconds)} -{' '}
+                    {formatSeconds(eventRow.endTimestampSeconds)}   SCORE {eventRow.maxScore}
+                  </Text>
+                  {evidenceWindowLabel ? (
+                    <Text style={styles.eventMeta}>EVIDENCE WINDOW {evidenceWindowLabel}</Text>
+                  ) : null}
+                  <Text style={styles.eventMeta}>
+                    {eventRow.wasTruncated ? 'PARTIAL WINDOW' : 'FULL 5S BEFORE + 5S AFTER'}   SEGMENTS{' '}
+                    {eventRow.segments.length}
+                  </Text>
+
+                  <Pressable
+                    onPress={() => setOpenEventId((current) => (current === eventRow.id ? '' : eventRow.id))}
+                    style={styles.clipToggleButton}>
+                    <Text style={styles.clipToggleText}>
+                      {isOpen ? 'Hide clip evidence' : 'View clip evidence'}
+                    </Text>
+                  </Pressable>
+
+                  {isOpen ? (
+                    <View style={styles.clipList}>
+                      {eventRow.segments.length === 0 ? (
+                        <Text style={styles.clipWaitingText}>Suspicious clip is still being prepared...</Text>
+                      ) : (
+                        eventRow.segments.map((segment, index) => (
+                          <View key={`${eventRow.id}-${segment.path}-${index}`} style={styles.segmentCard}>
+                            <Text style={styles.segmentMeta}>
+                              Segment {index + 1}   {formatTimestamp(segment.startedAtIso)}
+                            </Text>
+                            <Text style={styles.segmentMeta}>
+                              Duration {Math.round(segment.durationSeconds)}s
+                            </Text>
+                            {segment.videoUrl ? (
+                              <Video
+                                isLooping
+                                resizeMode={ResizeMode.COVER}
+                                source={{ uri: segment.videoUrl }}
+                                style={styles.segmentVideo}
+                                useNativeControls
+                              />
+                            ) : (
+                              <Text style={styles.clipWaitingText}>Signed URL unavailable for this segment.</Text>
+                            )}
+                          </View>
+                        ))
+                      )}
+                    </View>
+                  ) : null}
+                </View>
+              );
+            })}
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -293,6 +489,27 @@ const styles = StyleSheet.create({
     height: 28,
     justifyContent: 'center',
     width: 28,
+  },
+  clipList: {
+    gap: 8,
+    marginTop: 10,
+  },
+  clipToggleButton: {
+    alignItems: 'center',
+    borderColor: '#2f4d75',
+    borderWidth: 1,
+    marginTop: 10,
+    paddingVertical: 10,
+  },
+  clipToggleText: {
+    color: '#9ab5dd',
+    fontSize: type.body,
+    fontWeight: '700',
+  },
+  clipWaitingText: {
+    color: '#93abcf',
+    fontSize: type.body,
+    marginTop: 6,
   },
   content: {
     alignSelf: 'center',
@@ -343,6 +560,64 @@ const styles = StyleSheet.create({
   errorText: {
     color: '#ff9ea8',
     fontSize: type.body,
+  },
+  eventCard: {
+    backgroundColor: '#0b172b',
+    borderColor: '#234069',
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  eventHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  eventHeaderLeft: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  eventMeta: {
+    color: '#85a0c7',
+    fontSize: type.tiny,
+    letterSpacing: 1,
+    marginTop: 5,
+    textTransform: 'uppercase',
+  },
+  eventReason: {
+    color: palette.text,
+    fontSize: type.bodyLarge,
+    marginTop: 10,
+  },
+  eventStudent: {
+    color: '#d7e5ff',
+    fontSize: type.body,
+    fontWeight: '700',
+  },
+  eventTime: {
+    color: '#8fa5c6',
+    fontSize: type.tiny,
+  },
+  eventsCount: {
+    color: palette.warning,
+    fontSize: type.body,
+    fontWeight: '700',
+  },
+  eventsHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    marginTop: 20,
+  },
+  eventsList: {
+    gap: 10,
+  },
+  eventsTitle: {
+    color: palette.mutedStrong,
+    fontSize: type.label,
+    letterSpacing: 2.2,
   },
   faceBox: {
     alignItems: 'center',
@@ -420,6 +695,16 @@ const styles = StyleSheet.create({
   headerText: {
     flex: 1,
     marginLeft: 6,
+  },
+  levelBadge: {
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+  },
+  levelText: {
+    fontSize: type.tiny,
+    fontWeight: '700',
+    letterSpacing: 0.8,
   },
   liveDot: {
     borderRadius: 99,
@@ -503,6 +788,25 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     position: 'absolute',
     right: 10,
+  },
+  segmentCard: {
+    backgroundColor: '#0a1323',
+    borderColor: '#20324f',
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+  },
+  segmentMeta: {
+    color: '#8ea7ca',
+    fontSize: type.tiny,
+    letterSpacing: 0.8,
+    marginBottom: 4,
+  },
+  segmentVideo: {
+    backgroundColor: '#02050d',
+    height: 176,
+    marginTop: 6,
+    width: '100%',
   },
   statCard: {
     alignItems: 'center',

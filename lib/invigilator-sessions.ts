@@ -1,4 +1,6 @@
 import { supabase } from '@/lib/supabase';
+import { syncExamLifecycleStatuses } from '@/lib/exam-lifecycle';
+import { parseSuspiciousEvidence, SUSPICIOUS_CLIP_BUCKET } from '@/lib/proctoring';
 
 type AppRole = 'student' | 'invigilator' | 'admin';
 type ExamStatus = 'draft' | 'scheduled' | 'live' | 'completed' | 'cancelled';
@@ -40,8 +42,17 @@ type ExamRow = {
   course_id: string;
   id: string;
   monitoring_mode: MonitoringMode;
+  scheduled_end: string;
+  scheduled_start: string;
   status: ExamStatus;
   title: string;
+};
+
+type ExamTimingRow = {
+  id: string;
+  scheduled_end: string;
+  scheduled_start: string;
+  status: ExamStatus;
 };
 
 type ExamRegistrationRow = {
@@ -66,6 +77,19 @@ type AnalysisSessionRow = {
   status: SessionStatus;
   student_id: string;
   suspicious_event_count: number | null;
+};
+
+type SuspiciousEventRow = {
+  created_at: string;
+  end_timestamp_seconds: number;
+  evidence?: Record<string, unknown> | null;
+  id: string;
+  label: AnalysisLabel;
+  max_score: number | null;
+  reason: string;
+  risk_level: string;
+  start_timestamp_seconds: number;
+  student_id: string;
 };
 
 type AnalysisScoreRow = {
@@ -165,6 +189,32 @@ export type CreateExamSessionResult = {
 
 export type MonitorRiskLevel = 'low' | 'medium' | 'high' | 'critical';
 export type MonitorIndicatorStatus = 'ok' | 'alert';
+
+export type InvigilatorSuspiciousClipSegment = {
+  durationSeconds: number;
+  endedAtIso: string;
+  path: string;
+  videoUrl: string | null;
+  startedAtIso: string;
+};
+
+export type InvigilatorSuspiciousEvent = {
+  createdAt: string;
+  endTimestampSeconds: number;
+  id: string;
+  label: AnalysisLabel;
+  maxScore: number;
+  reason: string;
+  riskLevel: MonitorRiskLevel;
+  segments: InvigilatorSuspiciousClipSegment[];
+  startTimestampSeconds: number;
+  studentId: string;
+  studentInstitutionalId: string;
+  studentName: string;
+  wasTruncated: boolean;
+  windowEndIso: string | null;
+  windowStartIso: string | null;
+};
 
 export type InvigilatorMonitorStudent = {
   indicators: {
@@ -313,6 +363,37 @@ function deriveRiskLevel(flaggedSessions: number, highestScore: number): Session
   }
 
   return 'low';
+}
+
+function normalizeExamStatusForCurrentWindow({
+  nowTimestamp,
+  scheduledEndIso,
+  scheduledStartIso,
+  status,
+}: {
+  nowTimestamp: number;
+  scheduledEndIso: string;
+  scheduledStartIso: string;
+  status: ExamStatus;
+}): ExamStatus {
+  if (status === 'cancelled' || status === 'draft') {
+    return status;
+  }
+
+  const startTimestamp = new Date(scheduledStartIso).getTime();
+  const endTimestamp = new Date(scheduledEndIso).getTime();
+  const hasStarted = !Number.isNaN(startTimestamp) && startTimestamp <= nowTimestamp;
+  const hasEnded = !Number.isNaN(endTimestamp) && endTimestamp <= nowTimestamp;
+
+  if (status === 'completed' || hasEnded) {
+    return 'completed';
+  }
+
+  if (status === 'live' || hasStarted) {
+    return 'live';
+  }
+
+  return 'scheduled';
 }
 
 async function getCurrentProfile() {
@@ -525,6 +606,23 @@ function deriveMonitorIndicators({
   } as const;
 }
 
+function normalizeMonitorRiskLevel(value: string): MonitorRiskLevel {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'critical') {
+    return 'critical';
+  }
+
+  if (normalized === 'high') {
+    return 'high';
+  }
+
+  if (normalized === 'medium') {
+    return 'medium';
+  }
+
+  return 'low';
+}
+
 function toStudentInitials(fullName: string) {
   const initials = fullName
     .split(/\s+/)
@@ -577,21 +675,54 @@ export async function fetchInvigilatorDashboardData(): Promise<InvigilatorDashbo
     };
   }
 
-  const { data: overviewRows, error: overviewError } = await supabase
-    .from('invigilator_live_overview')
-    .select(
-      'exam_id, course_code, course_title, exam_title, status, monitoring_mode, scheduled_start, registered_students, live_sessions, flagged_sessions, highest_score'
-    )
-    .in('exam_id', examIds)
-    .neq('status', 'cancelled')
-    .order('scheduled_start', { ascending: true })
-    .returns<InvigilatorLiveOverviewRow[]>();
+  await syncExamLifecycleStatuses();
+
+  const [{ data: overviewRows, error: overviewError }, { data: examTimingRows, error: timingError }] =
+    await Promise.all([
+      supabase
+        .from('invigilator_live_overview')
+        .select(
+          'exam_id, course_code, course_title, exam_title, status, monitoring_mode, scheduled_start, registered_students, live_sessions, flagged_sessions, highest_score'
+        )
+        .in('exam_id', examIds)
+        .neq('status', 'cancelled')
+        .order('scheduled_start', { ascending: true })
+        .returns<InvigilatorLiveOverviewRow[]>(),
+      supabase
+        .from('exams')
+        .select('id, status, scheduled_start, scheduled_end')
+        .in('id', examIds)
+        .returns<ExamTimingRow[]>(),
+    ]);
 
   if (overviewError) {
     throw new Error(`Unable to load dashboard sessions: ${overviewError.message}`);
   }
 
-  const allSessions = (overviewRows ?? []).map(normalizeSessionRow);
+  if (timingError) {
+    throw new Error(`Unable to load dashboard exam timing: ${timingError.message}`);
+  }
+
+  const now = Date.now();
+  const timingByExamId = new Map((examTimingRows ?? []).map((row) => [row.id, row]));
+
+  const allSessions = (overviewRows ?? []).map((row) => {
+    const normalized = normalizeSessionRow(row);
+    const timing = timingByExamId.get(row.exam_id);
+    const effectiveStatus = timing
+      ? normalizeExamStatusForCurrentWindow({
+          nowTimestamp: now,
+          scheduledEndIso: timing.scheduled_end,
+          scheduledStartIso: timing.scheduled_start,
+          status: normalized.status,
+        })
+      : normalized.status;
+
+    return {
+      ...normalized,
+      status: effectiveStatus,
+    };
+  });
   const liveSessions = allSessions.filter((session) => session.status === 'live' || session.status === 'scheduled');
 
   return {
@@ -611,6 +742,7 @@ export async function fetchInvigilatorDashboardData(): Promise<InvigilatorDashbo
 export async function fetchInvigilatorProfileData(): Promise<InvigilatorProfileData> {
   const profile = await getCurrentProfile();
   const examIds = await getInvigilatorExamIds(profile.id);
+  await syncExamLifecycleStatuses();
 
   let sessions = 0;
   let flaggedSessions = 0;
@@ -688,17 +820,26 @@ export async function fetchInvigilatorMonitorData(
     throw new Error('No exam session selected.');
   }
 
+  await syncExamLifecycleStatuses();
   await getCurrentProfile();
 
   const { data: exam, error: examError } = await supabase
     .from('exams')
-    .select('id, title, status, monitoring_mode, course_id')
+    .select('id, title, status, monitoring_mode, course_id, scheduled_start, scheduled_end')
     .eq('id', examId)
     .single<ExamRow>();
 
   if (examError || !exam) {
     throw new Error(`Unable to load exam session: ${examError?.message ?? 'Not found.'}`);
   }
+
+  const effectiveExamStatus = normalizeExamStatusForCurrentWindow({
+    nowTimestamp: Date.now(),
+    scheduledEndIso: exam.scheduled_end,
+    scheduledStartIso: exam.scheduled_start,
+    status: exam.status,
+  });
+  const examHasEnded = effectiveExamStatus === 'completed';
 
   const [{ data: course, error: courseError }, { data: registrations, error: registrationsError }] =
     await Promise.all([
@@ -780,10 +921,13 @@ export async function fetchInvigilatorMonitorData(
         .toUpperCase() || registration.student_id.slice(0, 8).toUpperCase();
     const fullName = String(profile?.full_name ?? '').trim() || `Student ${institutionalId}`;
     const isActive =
-      isActiveSessionStatus(sessionStatus) ||
-      (!sessionStatus && isActiveRegistrationStatus(registrationStatus));
+      !examHasEnded &&
+      (isActiveSessionStatus(sessionStatus) ||
+        (!sessionStatus && isActiveRegistrationStatus(registrationStatus)));
     const isDone =
-      isDoneSessionStatus(sessionStatus) || (!sessionStatus && isDoneRegistrationStatus(registrationStatus));
+      examHasEnded ||
+      isDoneSessionStatus(sessionStatus) ||
+      (!sessionStatus && isDoneRegistrationStatus(registrationStatus));
 
     return {
       indicators: deriveMonitorIndicators({
@@ -822,7 +966,7 @@ export async function fetchInvigilatorMonitorData(
   return {
     courseCode: String(course?.code ?? 'COURSE').toUpperCase(),
     examId: exam.id,
-    examStatus: exam.status,
+    examStatus: effectiveExamStatus,
     monitorMode: exam.monitoring_mode,
     stats: {
       active: students.filter((student) => student.isActive).length,
@@ -834,6 +978,130 @@ export async function fetchInvigilatorMonitorData(
     students,
     title: exam.title || course?.title || 'Exam Session',
   };
+}
+
+export async function fetchInvigilatorSuspiciousEvents(
+  examIdInput: string
+): Promise<InvigilatorSuspiciousEvent[]> {
+  const examId = examIdInput.trim();
+  if (!examId) {
+    throw new Error('No exam session selected.');
+  }
+
+  await getCurrentProfile();
+
+  const queryFields =
+    'id, student_id, label, reason, risk_level, start_timestamp_seconds, end_timestamp_seconds, max_score, created_at, evidence';
+  const { data: eventRowsWithEvidence, error: evidenceError } = await supabase
+    .from('suspicious_events')
+    .select(queryFields)
+    .eq('exam_id', examId)
+    .order('created_at', { ascending: false })
+    .limit(100)
+    .returns<SuspiciousEventRow[]>();
+
+  let eventRows = eventRowsWithEvidence ?? [];
+
+  if (evidenceError) {
+    const { data: fallbackRows, error: fallbackError } = await supabase
+      .from('suspicious_events')
+      .select(
+        'id, student_id, label, reason, risk_level, start_timestamp_seconds, end_timestamp_seconds, max_score, created_at'
+      )
+      .eq('exam_id', examId)
+      .order('created_at', { ascending: false })
+      .limit(100)
+      .returns<SuspiciousEventRow[]>();
+
+    if (fallbackError) {
+      throw new Error(`Unable to load suspicious events: ${fallbackError.message}`);
+    }
+
+    eventRows = fallbackRows ?? [];
+  }
+
+  const studentIds = Array.from(new Set(eventRows.map((eventRow) => eventRow.student_id)));
+  let profileById = new Map<string, StudentProfileRow>();
+
+  if (studentIds.length > 0) {
+    const { data: studentProfiles, error: profilesError } = await supabase
+      .from('profiles')
+      .select('id, full_name, institutional_id')
+      .in('id', studentIds)
+      .returns<StudentProfileRow[]>();
+
+    if (profilesError) {
+      throw new Error(`Unable to load suspicious event students: ${profilesError.message}`);
+    }
+
+    profileById = new Map((studentProfiles ?? []).map((profile) => [profile.id, profile]));
+  }
+
+  const mappedEvents = await Promise.all(
+    eventRows.map(async (eventRow) => {
+      const profile = profileById.get(eventRow.student_id);
+      const evidence = parseSuspiciousEvidence(eventRow.evidence);
+
+      const segments = await Promise.all(
+        (evidence?.segments ?? []).map(async (segment) => {
+          const publicUrlFromEvidence =
+            typeof segment.publicUrl === 'string' && segment.publicUrl.trim().length > 0
+              ? segment.publicUrl.trim()
+              : null;
+
+          let resolvedVideoUrl = publicUrlFromEvidence;
+          if (!resolvedVideoUrl) {
+            const { data: publicUrlData } = supabase.storage
+              .from(SUSPICIOUS_CLIP_BUCKET)
+              .getPublicUrl(segment.path);
+            resolvedVideoUrl = publicUrlData.publicUrl ?? null;
+          }
+
+          if (!resolvedVideoUrl) {
+            const { data: signedUrlData } = await supabase.storage
+              .from(SUSPICIOUS_CLIP_BUCKET)
+              .createSignedUrl(segment.path, 60 * 60);
+            resolvedVideoUrl = signedUrlData?.signedUrl ?? null;
+          }
+
+          return {
+            durationSeconds: segment.durationSeconds,
+            endedAtIso: segment.endedAtIso,
+            path: segment.path,
+            videoUrl: resolvedVideoUrl,
+            startedAtIso: segment.startedAtIso,
+          } satisfies InvigilatorSuspiciousClipSegment;
+        })
+      );
+
+      const institutionalId =
+        String(profile?.institutional_id ?? '')
+          .trim()
+          .toUpperCase() || eventRow.student_id.slice(0, 8).toUpperCase();
+      const studentName = String(profile?.full_name ?? '').trim() || `Student ${institutionalId}`;
+
+      return {
+        createdAt: eventRow.created_at,
+        endTimestampSeconds: toNumber(eventRow.end_timestamp_seconds),
+        id: eventRow.id,
+        label: eventRow.label,
+        maxScore: toNumber(eventRow.max_score),
+        reason: eventRow.reason,
+        riskLevel: normalizeMonitorRiskLevel(String(eventRow.risk_level ?? 'medium')),
+        segments,
+        startTimestampSeconds: toNumber(eventRow.start_timestamp_seconds),
+        studentId: eventRow.student_id,
+        studentInstitutionalId: institutionalId,
+        studentName,
+        wasTruncated: Boolean(evidence?.wasTruncated),
+        windowEndIso: evidence?.windowEndIso || null,
+        windowStartIso: evidence?.windowStartIso || null,
+      } satisfies InvigilatorSuspiciousEvent;
+    })
+  );
+
+  mappedEvents.sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+  return mappedEvents;
 }
 
 export async function createExamSession(

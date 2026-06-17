@@ -184,14 +184,14 @@ async function main() {
   const env = { ...envFromFile, ...process.env };
 
   const rawSupabaseUrl = env.EXPO_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = env.EXPO_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
+  const serviceRoleKey = env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!rawSupabaseUrl) {
     throw new Error('Missing EXPO_PUBLIC_SUPABASE_URL.');
   }
 
   if (!serviceRoleKey) {
-    throw new Error('Missing EXPO_PUBLIC_SUPABASE_SERVICE_ROLE_KEY.');
+    throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY.');
   }
 
   const supabaseUrl = normalizeSupabaseUrl(rawSupabaseUrl);

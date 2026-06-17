@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { syncExamLifecycleStatuses } from '@/lib/exam-lifecycle';
 
 type AppRole = 'student' | 'invigilator' | 'admin';
 type ExamStatus = 'draft' | 'scheduled' | 'live' | 'completed' | 'cancelled';
@@ -190,6 +191,7 @@ export async function fetchStudentExamSessionData(
   }
 
   const profile = await getCurrentStudentProfile();
+  await syncExamLifecycleStatuses();
   await ensureStudentRegistration({ examId, studentId: profile.id });
 
   const [{ data: exam, error: examError }, { data: attempt, error: attemptError }] =
@@ -217,6 +219,20 @@ export async function fetchStudentExamSessionData(
 
   if (exam.status === 'cancelled') {
     throw new Error('This exam session is cancelled.');
+  }
+
+  const now = Date.now();
+  const scheduledStartTs = new Date(exam.scheduled_start).getTime();
+  const scheduledEndTs = new Date(exam.scheduled_end).getTime();
+  const hasEnded = !Number.isNaN(scheduledEndTs) && scheduledEndTs <= now;
+  const hasSubmitted = attempt?.status === 'submitted';
+
+  if ((exam.status === 'completed' || hasEnded) && !hasSubmitted) {
+    throw new Error('This exam session has ended.');
+  }
+
+  if (exam.status === 'scheduled' && !Number.isNaN(scheduledStartTs) && scheduledStartTs > now) {
+    throw new Error('This exam session has not started yet.');
   }
 
   const [{ data: course, error: courseError }, { data: questionRows, error: questionsError }] =
@@ -287,7 +303,7 @@ export async function fetchStudentExamSessionData(
     courseTitle: course?.title ?? exam.title,
     examId: exam.id,
     examTitle: exam.title || course?.title || 'Exam Session',
-    hasSubmitted: attempt?.status === 'submitted',
+    hasSubmitted,
     monitoringMode: exam.monitoring_mode,
     questions: mappedQuestions,
     scheduledEnd: exam.scheduled_end,
