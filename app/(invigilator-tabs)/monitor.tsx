@@ -149,6 +149,22 @@ function toPlaybackErrorText(value: unknown) {
   return 'Unknown playback error';
 }
 
+function getSegmentRoleLabel(role: 'event' | 'context-before' | 'context-after' | 'context') {
+  if (role === 'event') {
+    return 'EVENT';
+  }
+
+  if (role === 'context-before') {
+    return 'CONTEXT BEFORE';
+  }
+
+  if (role === 'context-after') {
+    return 'CONTEXT AFTER';
+  }
+
+  return 'CONTEXT';
+}
+
 export default function InvigilatorMonitorScreen() {
   const params = useLocalSearchParams<{ examId?: string | string[] }>();
   const examId = useMemo(
@@ -524,7 +540,7 @@ export default function InvigilatorMonitorScreen() {
           <View style={styles.emptyCard}>
             <Text style={styles.emptyTitle}>No suspicious clips yet</Text>
             <Text style={styles.emptyCopy}>
-              When students are flagged, 5 seconds before and after each event will appear here.
+              When students are flagged, the event clip plus about 2 seconds before and after will appear here.
             </Text>
           </View>
         ) : (
@@ -567,8 +583,10 @@ export default function InvigilatorMonitorScreen() {
                     <Text style={styles.eventMeta}>EVIDENCE WINDOW {evidenceWindowLabel}</Text>
                   ) : null}
                   <Text style={styles.eventMeta}>
-                    {eventRow.wasTruncated ? 'PARTIAL WINDOW' : 'FULL 5S BEFORE + 5S AFTER'}   SEGMENTS{' '}
-                    {eventRow.segments.length}
+                    {eventRow.wasTruncated
+                      ? `PARTIAL WINDOW (${eventRow.requestedLeadSeconds}s BEFORE + ${eventRow.requestedTrailSeconds}s AFTER TARGET)`
+                      : `FULL ${eventRow.requestedLeadSeconds}s BEFORE + ${eventRow.requestedTrailSeconds}s AFTER`}{' '}
+                    | SEGMENTS {eventRow.segments.length}
                   </Text>
 
                   <Pressable
@@ -588,6 +606,9 @@ export default function InvigilatorMonitorScreen() {
                           <View key={`${eventRow.id}-${segment.path}-${index}`} style={styles.segmentCard}>
                             <Text style={styles.segmentMeta}>
                               Segment {index + 1}   {formatTimestamp(segment.startedAtIso)}
+                            </Text>
+                            <Text style={styles.segmentMeta}>
+                              Focus {getSegmentRoleLabel(segment.role)}
                             </Text>
                             <Text style={styles.segmentMeta}>
                               Duration {Math.round(segment.durationSeconds)}s
@@ -610,7 +631,7 @@ export default function InvigilatorMonitorScreen() {
                                         }))
                                       }
                                       resizeMode={ResizeMode.CONTAIN}
-                                      shouldPlay
+                                      shouldPlay={segment.role === 'event' && index === 0}
                                       source={{ uri: localClipUri }}
                                       style={styles.segmentVideo}
                                       useNativeControls

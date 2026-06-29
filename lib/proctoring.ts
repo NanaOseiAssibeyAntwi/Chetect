@@ -151,30 +151,76 @@ const ANALYSIS_LABEL_WEIGHT: Record<AnalysisLabel, number> = {
   NO_FACE: 0,
   SUSPICIOUS: 3,
 };
+const DEFAULT_DETECTOR_BASE_URL = 'https://cheatingmonitormodel.onrender.com';
 let detectorSummaryEndpointUnsupported = false;
 let resolvedDetectorBaseUrl = '';
 
 function normalizeBaseUrl(urlInput: string) {
-  return urlInput.trim().replace(/\/+$/, '');
+  const trimmed = String(urlInput ?? '').trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  const compact = trimmed.replace(/\s+/g, '');
+  const protocolMatch = compact.match(/^([a-z]+):\/\//i);
+  const protocol = (protocolMatch?.[1] ?? 'http').toLowerCase();
+  if (protocol !== 'http' && protocol !== 'https') {
+    return '';
+  }
+
+  const remainder = protocolMatch ? compact.slice(protocolMatch[0].length) : compact;
+  const authorityAndPath = remainder.split(/[?#]/)[0] ?? '';
+  const slashIndex = authorityAndPath.indexOf('/');
+  const authority = slashIndex >= 0 ? authorityAndPath.slice(0, slashIndex) : authorityAndPath;
+  const normalizedPath =
+    slashIndex >= 0 ? authorityAndPath.slice(slashIndex).replace(/\/+$/, '') : '';
+  if (!authority) {
+    return '';
+  }
+
+  const pathSuffix = normalizedPath && normalizedPath !== '/' ? normalizedPath : '';
+  return `${protocol}://${authority}${pathSuffix}`;
 }
 
 function parseExpoHostForDetector() {
-  const expoHostUri = String(Constants.expoConfig?.hostUri ?? '').trim();
-  if (expoHostUri) {
-    const host = expoHostUri.split(':')[0]?.trim();
-    if (host) {
-      return host;
+  const extractHost = (input: unknown) => {
+    const trimmed = String(input ?? '').trim();
+    if (!trimmed) {
+      return '';
     }
+
+    const withoutProtocol = trimmed.replace(/^[a-z]+:\/\//i, '');
+    const authority = withoutProtocol.split('/')[0] ?? '';
+    return authority.split(':')[0]?.trim() ?? '';
+  };
+
+  const expoHost = extractHost(Constants.expoConfig?.hostUri);
+  if (expoHost) {
+    return expoHost;
   }
 
-  const legacyDebuggerHost = String(
-    (Constants as unknown as { manifest?: { debuggerHost?: string } }).manifest?.debuggerHost ?? ''
-  ).trim();
+  const expoGoDebuggerHost = extractHost(
+    (Constants as unknown as { expoGoConfig?: { debuggerHost?: string } }).expoGoConfig
+      ?.debuggerHost
+  );
+  if (expoGoDebuggerHost) {
+    return expoGoDebuggerHost;
+  }
+
+  const manifest2Host = extractHost(
+    (
+      Constants as unknown as { manifest2?: { extra?: { expoClient?: { hostUri?: string } } } }
+    ).manifest2?.extra?.expoClient?.hostUri
+  );
+  if (manifest2Host) {
+    return manifest2Host;
+  }
+
+  const legacyDebuggerHost = extractHost(
+    (Constants as unknown as { manifest?: { debuggerHost?: string } }).manifest?.debuggerHost
+  );
   if (legacyDebuggerHost) {
-    const host = legacyDebuggerHost.split(':')[0]?.trim();
-    if (host) {
-      return host;
-    }
+    return legacyDebuggerHost;
   }
 
   return '';
@@ -342,18 +388,7 @@ function getDetectorBaseUrlCandidates() {
 
   pushCandidate(resolvedDetectorBaseUrl);
   pushCandidate(getConfiguredDetectorBaseUrl());
-
-  const expoHost = parseExpoHostForDetector();
-  if (isLikelyLocalNetworkHost(expoHost)) {
-    pushCandidate(`http://${expoHost}:8000`);
-  }
-
-  if (Platform.OS === 'android') {
-    pushCandidate('http://10.0.2.2:8000');
-  }
-
-  pushCandidate('http://127.0.0.1:8000');
-  pushCandidate('http://localhost:8000');
+  pushCandidate(DEFAULT_DETECTOR_BASE_URL);
 
   return candidates;
 }
@@ -378,7 +413,7 @@ function buildDetectorReachabilityError(endpointPath: string, candidates: string
     .map((baseUrl) => `${baseUrl}${endpointPath}`)
     .join(', ');
   return new Error(
-    `Unable to reach detector service. Tried: ${attempted}. If this is a physical phone, set EXPO_PUBLIC_CHEATING_DETECTOR_URL to http://<your-laptop-lan-ip>:8000, run detector with: uvicorn cheating_detector.api.app:app --host 0.0.0.0 --port 8000, make sure Windows Firewall allows inbound TCP 8000, and restart Expo.`
+    `Unable to reach detector service. Tried: ${attempted}. Confirm EXPO_PUBLIC_CHEATING_DETECTOR_URL is set to https://cheatingmonitormodel.onrender.com and restart Expo so the latest env value is loaded.`
   );
 }
 
@@ -422,7 +457,7 @@ async function fetchDetectorAcrossCandidates(params: {
 }
 
 export function getDetectorBaseUrl() {
-  return getDetectorBaseUrlCandidates()[0] ?? deriveDetectorFallbackBaseUrl();
+  return getDetectorBaseUrlCandidates()[0] ?? DEFAULT_DETECTOR_BASE_URL;
 }
 
 function asJsonRecord(value: unknown): Record<string, unknown> | null {

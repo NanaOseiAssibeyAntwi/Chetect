@@ -42,8 +42,8 @@ import {
 
 const EMPTY_QUESTIONS: StudentExamSessionData['questions'] = [];
 const CLIP_SECONDS = 2;
-const EVIDENCE_LEAD_SECONDS = 5;
-const EVIDENCE_TRAIL_SECONDS = 5;
+const EVIDENCE_LEAD_SECONDS = 2;
+const EVIDENCE_TRAIL_SECONDS = 2;
 const SEGMENT_PRUNE_WINDOW_SECONDS = 32;
 const EVIDENCE_UPLOAD_BLOCKED_MESSAGE =
   'Suspicious clip evidence upload is blocked by Supabase Storage policy until the latest suspiciousVideos migration is applied.';
@@ -605,7 +605,7 @@ export default function ExamSessionScreen() {
         }
 
         setProctoringStatus('active');
-        setProctoringMessage('Reconnecting to local detector service...');
+        setProctoringMessage('Reconnecting to detector service...');
 
         try {
           const refreshedDetectorSessionId = await createDetectorSession();
@@ -620,7 +620,7 @@ export default function ExamSessionScreen() {
           const retryMessage = toErrorMessage(retryError, message);
           if (isLikelyTransientNetworkFailure(retryMessage)) {
             throw new Error(
-              'Detector is unreachable right now. Keep the exam open, confirm EXPO_PUBLIC_CHEATING_DETECTOR_URL points to your laptop LAN IP, and make sure the detector server is running on port 8000.'
+              'Detector is unreachable right now. Keep the exam open, confirm EXPO_PUBLIC_CHEATING_DETECTOR_URL points to https://cheatingmonitormodel.onrender.com, and retry.'
             );
           }
           throw retryError;

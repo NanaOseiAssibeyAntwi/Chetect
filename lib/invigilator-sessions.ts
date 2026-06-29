@@ -189,11 +189,17 @@ export type CreateExamSessionResult = {
 
 export type MonitorRiskLevel = 'low' | 'medium' | 'high' | 'critical';
 export type MonitorIndicatorStatus = 'ok' | 'alert';
+export type InvigilatorSuspiciousClipRole =
+  | 'event'
+  | 'context-before'
+  | 'context-after'
+  | 'context';
 
 export type InvigilatorSuspiciousClipSegment = {
   durationSeconds: number;
   endedAtIso: string;
   path: string;
+  role: InvigilatorSuspiciousClipRole;
   videoUrl: string | null;
   startedAtIso: string;
 };
@@ -206,6 +212,8 @@ export type InvigilatorSuspiciousEvent = {
   maxScore: number;
   reason: string;
   riskLevel: MonitorRiskLevel;
+  requestedLeadSeconds: number;
+  requestedTrailSeconds: number;
   segments: InvigilatorSuspiciousClipSegment[];
   startTimestampSeconds: number;
   studentId: string;
@@ -285,6 +293,11 @@ function profileLookupTokens(profile: StudentProfileRow) {
 function toNumber(value: number | string | null | undefined) {
   const numeric = Number(value ?? 0);
   return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function toTimestampMs(value: string | null | undefined) {
+  const timestamp = new Date(String(value ?? '')).getTime();
+  return Number.isNaN(timestamp) ? null : timestamp;
 }
 
 function ensureInvigilatorRole(role: AppRole) {
@@ -1041,8 +1054,19 @@ export async function fetchInvigilatorSuspiciousEvents(
     eventRows.map(async (eventRow) => {
       const profile = profileById.get(eventRow.student_id);
       const evidence = parseSuspiciousEvidence(eventRow.evidence);
+      const requestedLeadSeconds = Math.max(0, toNumber(evidence?.requestedLeadSeconds));
+      const requestedTrailSeconds = Math.max(0, toNumber(evidence?.requestedTrailSeconds));
+      const eventDurationSeconds = Math.max(
+        0.25,
+        toNumber(eventRow.end_timestamp_seconds) - toNumber(eventRow.start_timestamp_seconds)
+      );
+      const windowStartMs = toTimestampMs(evidence?.windowStartIso ?? null);
+      const eventStartMs =
+        windowStartMs === null ? null : windowStartMs + requestedLeadSeconds * 1000;
+      const eventEndMs =
+        eventStartMs === null ? null : eventStartMs + eventDurationSeconds * 1000;
 
-      const segments = await Promise.all(
+      const resolvedSegments = await Promise.all(
         (evidence?.segments ?? []).map(async (segment) => {
           const publicUrlFromEvidence =
             typeof segment.publicUrl === 'string' && segment.publicUrl.trim().length > 0
@@ -1069,11 +1093,55 @@ export async function fetchInvigilatorSuspiciousEvents(
             durationSeconds: segment.durationSeconds,
             endedAtIso: segment.endedAtIso,
             path: segment.path,
+            role: 'context',
             videoUrl: resolvedVideoUrl,
             startedAtIso: segment.startedAtIso,
           } satisfies InvigilatorSuspiciousClipSegment;
         })
       );
+
+      const segments = resolvedSegments
+        .map((segment) => {
+          const segmentStartMs = toTimestampMs(segment.startedAtIso);
+          const segmentEndMs = toTimestampMs(segment.endedAtIso);
+          let role: InvigilatorSuspiciousClipRole = 'context';
+
+          if (
+            segmentStartMs !== null &&
+            segmentEndMs !== null &&
+            eventStartMs !== null &&
+            eventEndMs !== null
+          ) {
+            if (segmentEndMs > eventStartMs && segmentStartMs < eventEndMs) {
+              role = 'event';
+            } else if (segmentEndMs <= eventStartMs) {
+              role = 'context-before';
+            } else if (segmentStartMs >= eventEndMs) {
+              role = 'context-after';
+            }
+          }
+
+          return {
+            ...segment,
+            role,
+          } satisfies InvigilatorSuspiciousClipSegment;
+        })
+        .sort((left, right) => {
+          const roleWeight: Record<InvigilatorSuspiciousClipRole, number> = {
+            event: 0,
+            'context-before': 1,
+            'context-after': 2,
+            context: 3,
+          };
+          const roleDelta = roleWeight[left.role] - roleWeight[right.role];
+          if (roleDelta !== 0) {
+            return roleDelta;
+          }
+
+          const leftStartMs = toTimestampMs(left.startedAtIso) ?? 0;
+          const rightStartMs = toTimestampMs(right.startedAtIso) ?? 0;
+          return leftStartMs - rightStartMs;
+        });
 
       const institutionalId =
         String(profile?.institutional_id ?? '')
@@ -1089,6 +1157,8 @@ export async function fetchInvigilatorSuspiciousEvents(
         maxScore: toNumber(eventRow.max_score),
         reason: eventRow.reason,
         riskLevel: normalizeMonitorRiskLevel(String(eventRow.risk_level ?? 'medium')),
+        requestedLeadSeconds,
+        requestedTrailSeconds,
         segments,
         startTimestampSeconds: toNumber(eventRow.start_timestamp_seconds),
         studentId: eventRow.student_id,
