@@ -41,7 +41,7 @@ import {
 } from '@/lib/student-exam';
 
 const EMPTY_QUESTIONS: StudentExamSessionData['questions'] = [];
-const CLIP_SECONDS = 2;
+const CLIP_SECONDS = 6;
 const EVIDENCE_LEAD_SECONDS = 2;
 const EVIDENCE_TRAIL_SECONDS = 2;
 const SEGMENT_PRUNE_WINDOW_SECONDS = 32;
