@@ -99,6 +99,25 @@ function formatSeconds(value: number) {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
+function formatPreciseSeconds(value: number) {
+  if (!Number.isFinite(value)) {
+    return '00:00.00';
+  }
+
+  const safe = Math.max(0, value);
+  const minutes = Math.floor(safe / 60);
+  const seconds = (safe % 60).toFixed(2).padStart(5, '0');
+  return `${String(minutes).padStart(2, '0')}:${seconds}`;
+}
+
+function formatAlertDurationSeconds(value: number) {
+  if (!Number.isFinite(value)) {
+    return '0.00s';
+  }
+
+  return `${Math.max(0, value).toFixed(2)}s`;
+}
+
 function formatTimestamp(isoInput: string) {
   const timestamp = new Date(isoInput);
   if (Number.isNaN(timestamp.getTime())) {
@@ -497,6 +516,11 @@ export default function InvigilatorMonitorScreen() {
                     <Text style={styles.studentName}>{student.name}</Text>
                     <Text style={styles.studentId}>{student.institutionalId}</Text>
                     <Text style={styles.studentStatus}>{student.status}</Text>
+                    <Text numberOfLines={2} style={styles.studentObservation}>
+                      {student.latestObservation
+                        ? `Latest: ${student.latestObservation}`
+                        : 'Latest: No detector observation yet.'}
+                    </Text>
 
                     <View style={styles.flagRow}>
                       {flags.map((flag) => {
@@ -574,10 +598,27 @@ export default function InvigilatorMonitorScreen() {
                     <Text style={styles.eventTime}>{formatTimestamp(eventRow.createdAt)}</Text>
                   </View>
 
+                  <View style={styles.alertDetailsRow}>
+                    <View style={styles.alertDetailChip}>
+                      <Text style={styles.alertDetailLabel}>SEVERITY</Text>
+                      <Text style={styles.alertDetailValue}>
+                        {eventRow.severity ? eventRow.severity.toUpperCase() : 'N/A'}
+                      </Text>
+                    </View>
+                    <View style={styles.alertDetailChip}>
+                      <Text style={styles.alertDetailLabel}>SIGNAL</Text>
+                      <Text numberOfLines={1} style={styles.alertDetailValue}>
+                        {eventRow.signalCode ?? 'N/A'}
+                      </Text>
+                    </View>
+                  </View>
+
                   <Text style={styles.eventReason}>{eventRow.reason}</Text>
                   <Text style={styles.eventMeta}>
-                    EVENT WINDOW {formatSeconds(eventRow.startTimestampSeconds)} -{' '}
-                    {formatSeconds(eventRow.endTimestampSeconds)}   SCORE {eventRow.maxScore}
+                    ALERT {formatPreciseSeconds(eventRow.startTimestampSeconds)} -{' '}
+                    {formatPreciseSeconds(eventRow.endTimestampSeconds)} | DURATION{' '}
+                    {formatAlertDurationSeconds(eventRow.alertDurationSeconds)} | SCORE{' '}
+                    {Math.round(eventRow.maxScore)}
                   </Text>
                   {evidenceWindowLabel ? (
                     <Text style={styles.eventMeta}>EVIDENCE WINDOW {evidenceWindowLabel}</Text>
@@ -611,7 +652,7 @@ export default function InvigilatorMonitorScreen() {
                               Focus {getSegmentRoleLabel(segment.role)}
                             </Text>
                             <Text style={styles.segmentMeta}>
-                              Duration {Math.round(segment.durationSeconds)}s
+                              Duration {formatSeconds(segment.durationSeconds)}
                             </Text>
                             {(() => {
                               const clipKey = toClipKey(eventRow.id, segment.path);
@@ -781,6 +822,31 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: 8,
+  },
+  alertDetailsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+  },
+  alertDetailChip: {
+    backgroundColor: '#132744',
+    borderColor: '#2c4f7a',
+    borderWidth: 1,
+    flex: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 7,
+  },
+  alertDetailLabel: {
+    color: '#88a8d2',
+    fontSize: 10,
+    letterSpacing: 0.9,
+  },
+  alertDetailValue: {
+    color: '#dbe9ff',
+    fontSize: type.tiny,
+    fontWeight: '700',
+    marginTop: 4,
+    textTransform: 'uppercase',
   },
   eventMeta: {
     color: '#85a0c7',
@@ -1066,5 +1132,12 @@ const styles = StyleSheet.create({
     letterSpacing: 1.1,
     marginTop: 6,
     textTransform: 'uppercase',
+  },
+  studentObservation: {
+    color: '#7c98c3',
+    fontSize: type.tiny,
+    lineHeight: 16,
+    marginTop: 4,
+    minHeight: 32,
   },
 });

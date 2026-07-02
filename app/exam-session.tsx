@@ -15,9 +15,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { layout, palette, type } from '@/constants/design';
+import { layout, type } from '@/constants/design';
 import {
   analyzeVideoSummary,
+  buildDetectorObservationSummary,
   buildSuspiciousEvidenceTemplate,
   createDetectorSession,
   createEmptyAggregateMetrics,
@@ -41,10 +42,12 @@ import {
 } from '@/lib/student-exam';
 
 const EMPTY_QUESTIONS: StudentExamSessionData['questions'] = [];
-const CLIP_SECONDS = 6;
+const CLIP_SECONDS = 5;
+const CLIP_READY_MIN_BYTES = 6144;
 const EVIDENCE_LEAD_SECONDS = 2;
 const EVIDENCE_TRAIL_SECONDS = 2;
 const SEGMENT_PRUNE_WINDOW_SECONDS = 32;
+const PROCTORING_CLIP_CACHE_DIR = 'proctoring-live-clips';
 const EVIDENCE_UPLOAD_BLOCKED_MESSAGE =
   'Suspicious clip evidence upload is blocked by Supabase Storage policy until the latest suspiciousVideos migration is applied.';
 const EVIDENCE_UPLOAD_WARNING_MESSAGE =
@@ -66,6 +69,175 @@ type PendingTrailingEvidence = {
   targetWindowEndMs: number;
 };
 
+type LiveDetectorSummary = Awaited<ReturnType<typeof analyzeVideoSummary>>;
+type LiveDetectorAlert = LiveDetectorSummary['alerts'][number];
+type LiveDetectorEvent = LiveDetectorSummary['events'][number];
+
+function normalizeDetectorSeverity(value: string | null | undefined) {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+function isMildHeadPoseOrGazeReason(reason: string) {
+  const normalized = reason.trim().toLowerCase();
+  return /head tilt|head yaw|head pitch|head roll|tilted to the (left|right)|eyes? rolled to the (left|right|up|down)|gaze|looking (left|right|up|down)|look(?:ing)? away|sideways|off-screen/.test(
+    normalized
+  );
+}
+
+function toFiniteDetectorSeconds(value: unknown) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.max(0, numeric) : 0;
+}
+
+function isPersistentMildHeadPoseOrGazeEvent(event: LiveDetectorEvent) {
+  const severity = normalizeDetectorSeverity(event.severity);
+  const score = Number(event.max_score ?? 0);
+  const durationSeconds = toFiniteDetectorSeconds(event.duration_seconds);
+
+  if (score >= 92) {
+    return true;
+  }
+
+  if ((severity === 'critical' || severity === 'high') && score >= 80 && durationSeconds >= 1.5) {
+    return true;
+  }
+
+  return score >= 85 && durationSeconds >= 1.8;
+}
+
+function doDetectorWindowsOverlap(
+  startASeconds: number,
+  endASeconds: number,
+  startBSeconds: number,
+  endBSeconds: number
+) {
+  return Math.min(endASeconds, endBSeconds) - Math.max(startASeconds, startBSeconds) >= 0.12;
+}
+
+function isDetectorAlertActionable(alert: LiveDetectorAlert) {
+  const severity = normalizeDetectorSeverity(alert.severity);
+  const label = detectorLabelToAnalysisLabel(alert.label);
+  if (label !== 'SUSPICIOUS' && severity !== 'high' && severity !== 'critical') {
+    return false;
+  }
+
+  return !isMildHeadPoseOrGazeReason(String(alert.reason ?? ''));
+}
+
+function doesDetectorEventMatchAlert(event: LiveDetectorEvent, alert: LiveDetectorAlert) {
+  return doDetectorWindowsOverlap(
+    Number(event.start_timestamp_seconds),
+    Number(event.end_timestamp_seconds),
+    Number(alert.start_timestamp_seconds),
+    Number(alert.end_timestamp_seconds)
+  );
+}
+
+function isDetectorEventActionable(event: LiveDetectorEvent) {
+  const label = detectorLabelToAnalysisLabel(event.label);
+  const severity = normalizeDetectorSeverity(event.severity);
+  const score = Number(event.max_score ?? 0);
+  if (label !== 'SUSPICIOUS') {
+    return false;
+  }
+
+  if (isMildHeadPoseOrGazeReason(String(event.reason ?? ''))) {
+    return isPersistentMildHeadPoseOrGazeEvent(event);
+  }
+
+  return severity === 'critical' || severity === 'high' || score >= 75;
+}
+
+function doesSummaryOnlyContainMildHeadPoseOrGazeSignals(summary: LiveDetectorSummary) {
+  const reasons = [...(summary.alerts ?? []), ...(summary.events ?? [])]
+    .map((signal) => String(signal.reason ?? '').trim())
+    .filter(Boolean);
+
+  return reasons.length > 0 && reasons.every(isMildHeadPoseOrGazeReason);
+}
+
+function buildActionableDetectorSummary(summary: LiveDetectorSummary): LiveDetectorSummary {
+  let actionableAlerts: LiveDetectorAlert[] = [];
+  let actionableEvents: LiveDetectorEvent[] = [];
+  if ((summary.alerts ?? []).length > 0) {
+    const usedEventIndexes = new Set<number>();
+    const matchedSignals = (summary.alerts ?? [])
+      .map((alert) => {
+        const matchedEvent = summary.events
+          .map((event, index) => ({
+            event,
+            index,
+          }))
+          .filter(({ event, index }) => !usedEventIndexes.has(index) && doesDetectorEventMatchAlert(event, alert))
+          .sort((left, right) => {
+            const rightScore = Number(right.event.max_score ?? 0);
+            const leftScore = Number(left.event.max_score ?? 0);
+            if (rightScore !== leftScore) {
+              return rightScore - leftScore;
+            }
+
+            const rightDuration = Number(right.event.duration_seconds ?? 0);
+            const leftDuration = Number(left.event.duration_seconds ?? 0);
+            return rightDuration - leftDuration;
+          })[0];
+
+        if (matchedEvent) {
+          if (!isDetectorEventActionable(matchedEvent.event)) {
+            return null;
+          }
+
+          usedEventIndexes.add(matchedEvent.index);
+          return {
+            alert,
+            event: matchedEvent.event,
+          };
+        }
+
+        if (!isDetectorAlertActionable(alert)) {
+          return null;
+        }
+
+        return {
+          alert,
+          event: null,
+        };
+      })
+      .filter(
+        (
+          signal
+        ): signal is {
+          alert: LiveDetectorAlert;
+          event: LiveDetectorEvent | null;
+        } => Boolean(signal)
+      );
+
+    actionableAlerts = matchedSignals.map((signal) => signal.alert);
+    actionableEvents = matchedSignals
+      .map((signal) => signal.event)
+      .filter((event): event is LiveDetectorEvent => Boolean(event));
+  } else {
+    actionableEvents = summary.events.filter(isDetectorEventActionable);
+  }
+
+  const actionableCount = actionableAlerts.length > 0 ? actionableAlerts.length : actionableEvents.length;
+  const normalizedFinalLabel = detectorLabelToAnalysisLabel(summary.final_label);
+  const hasOnlyMildHeadPoseOrGazeSignals = doesSummaryOnlyContainMildHeadPoseOrGazeSignals(summary);
+  const downgradedFinalLabel =
+    actionableCount === 0 &&
+    normalizedFinalLabel === 'SUSPICIOUS' &&
+    (Number(summary.max_score ?? 0) < 75 || hasOnlyMildHeadPoseOrGazeSignals)
+      ? 'CAUTION'
+      : summary.final_label;
+
+  return {
+    ...summary,
+    alerts: actionableAlerts,
+    events: actionableEvents,
+    final_label: downgradedFinalLabel,
+    suspicious_event_count: actionableCount,
+  };
+}
+
 function formatCountdown(totalSeconds: number) {
   const safeSeconds = Math.max(0, totalSeconds);
   const hours = Math.floor(safeSeconds / 3600);
@@ -77,6 +249,13 @@ function formatCountdown(totalSeconds: number) {
   }
 
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function clampPercent(value: number) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.max(0, Math.min(100, Math.round(value)));
 }
 
 function deriveRemainingSeconds(scheduledEndIso: string) {
@@ -163,7 +342,7 @@ function isLikelyUnfinalizedClipError(message: string) {
 async function waitForClipFinalizationRetryWindow(clipUri: string) {
   try {
     await waitForRecordedClipReady(clipUri, {
-      minBytes: 6144,
+      minBytes: CLIP_READY_MIN_BYTES,
       pollMs: 170,
       stableReads: 3,
       timeoutMs: 4200,
@@ -188,6 +367,123 @@ function deriveClipExtensionFromUri(clipUri: string) {
   }
 
   return '.mp4';
+}
+
+function normalizeClipUri(clipUri: string | null | undefined) {
+  return String(clipUri ?? '').split('?')[0]?.trim() ?? '';
+}
+
+function toDirectoryUri(rootUri: string) {
+  return rootUri.endsWith('/') ? rootUri : `${rootUri}/`;
+}
+
+function getProctoringClipCacheRootUri() {
+  const cacheRoot = FileSystem.cacheDirectory ?? FileSystem.documentDirectory ?? '';
+  if (!cacheRoot) {
+    return '';
+  }
+
+  return `${toDirectoryUri(cacheRoot)}${PROCTORING_CLIP_CACHE_DIR}/`;
+}
+
+function isManagedProctoringClipUri(clipUri: string) {
+  const cacheRoot = getProctoringClipCacheRootUri();
+  const normalizedClipUri = normalizeClipUri(clipUri);
+  return Boolean(cacheRoot && normalizedClipUri && normalizedClipUri.startsWith(cacheRoot));
+}
+
+async function ensureProctoringClipCacheRoot() {
+  const cacheRoot = getProctoringClipCacheRootUri();
+  if (!cacheRoot) {
+    return '';
+  }
+
+  try {
+    await FileSystem.makeDirectoryAsync(cacheRoot, {
+      intermediates: true,
+    });
+  } catch {
+    // If folder creation fails, recording can still continue using the original URI.
+  }
+
+  return cacheRoot;
+}
+
+async function deleteClipFileIfPresent(clipUri: string) {
+  const normalizedClipUri = normalizeClipUri(clipUri);
+  if (!normalizedClipUri) {
+    return;
+  }
+
+  try {
+    await FileSystem.deleteAsync(normalizedClipUri, {
+      idempotent: true,
+    });
+  } catch {
+    // Best effort cleanup for temp clips.
+  }
+}
+
+async function clearManagedProctoringClipCache(options: { keepUris?: string[] } = {}) {
+  const cacheRoot = await ensureProctoringClipCacheRoot();
+  if (!cacheRoot) {
+    return;
+  }
+
+  const keepUris = new Set(
+    (options.keepUris ?? [])
+      .map((clipUri) => normalizeClipUri(clipUri))
+      .filter((clipUri) => clipUri.startsWith(cacheRoot))
+  );
+
+  try {
+    const entries = await FileSystem.readDirectoryAsync(cacheRoot);
+    await Promise.all(
+      entries.map(async (entryName) => {
+        const entryUri = `${cacheRoot}${entryName}`;
+        if (keepUris.has(entryUri)) {
+          return;
+        }
+
+        await deleteClipFileIfPresent(entryUri);
+      })
+    );
+  } catch {
+    // Best effort cleanup for temp clips.
+  }
+}
+
+async function copyClipIntoManagedCache(clipUri: string) {
+  const normalizedClipUri = normalizeClipUri(clipUri);
+  if (!normalizedClipUri || Platform.OS === 'web') {
+    return normalizedClipUri;
+  }
+
+  const cacheRoot = await ensureProctoringClipCacheRoot();
+  if (!cacheRoot) {
+    return normalizedClipUri;
+  }
+
+  const extension = deriveClipExtensionFromUri(normalizedClipUri);
+  const copiedClipUri = `${cacheRoot}segment-${Date.now()}-${randomId()}${extension}`;
+
+  await FileSystem.copyAsync({
+    from: normalizedClipUri,
+    to: copiedClipUri,
+  });
+
+  await waitForRecordedClipReady(copiedClipUri, {
+    minBytes: CLIP_READY_MIN_BYTES,
+    pollMs: 130,
+    stableReads: 2,
+    timeoutMs: 2600,
+  });
+
+  if (normalizedClipUri !== copiedClipUri) {
+    await deleteClipFileIfPresent(normalizedClipUri);
+  }
+
+  return copiedClipUri;
 }
 
 function toTimestampMs(isoValue: string) {
@@ -232,23 +528,11 @@ function appendEvidenceSegmentIfMissing(
 }
 
 function deriveDetectorSampling(monitoringMode: StudentExamSessionData['monitoringMode']) {
-  if (monitoringMode === 'strict') {
-    return {
-      maxFrames: 28,
-      sampleEveryNFrames: 2,
-    };
-  }
-
-  if (monitoringMode === 'minimal') {
-    return {
-      maxFrames: 14,
-      sampleEveryNFrames: 4,
-    };
-  }
-
+  void monitoringMode;
+  // Match the detector defaults so live app analysis stays comparable to direct API checks.
   return {
-    maxFrames: 20,
-    sampleEveryNFrames: 3,
+    maxFrames: 30,
+    sampleEveryNFrames: 10,
   };
 }
 
@@ -295,7 +579,11 @@ export default function ExamSessionScreen() {
     'idle'
   );
   const [proctoringMessage, setProctoringMessage] = useState('Preparing live analysis...');
-  const [flaggedMoments, setFlaggedMoments] = useState(0);
+  const [latestWindowLabel, setLatestWindowLabel] = useState<
+    'NO_FACE' | 'NORMAL' | 'CAUTION' | 'SUSPICIOUS' | null
+  >(null);
+  const [latestWindowEventCount, setLatestWindowEventCount] = useState(0);
+  const [latestWindowObservation, setLatestWindowObservation] = useState('');
   const [proctoringHandleRevision, setProctoringHandleRevision] = useState(0);
 
   const cameraRef = useRef<CameraView | null>(null);
@@ -348,14 +636,20 @@ export default function ExamSessionScreen() {
 
     segment.path = uploadedSegment.path;
     segment.publicUrl = uploadedSegment.publicUrl;
+
+    if (isManagedProctoringClipUri(segment.uri)) {
+      await deleteClipFileIfPresent(segment.uri);
+    }
+
     return uploadedSegment;
   }, []);
 
   const registerRecentSegment = useCallback((segment: LocalClipSegment) => {
     const segmentEndMs = toTimestampMs(segment.endedAtIso) ?? Date.now();
     const pruneBeforeMs = segmentEndMs - SEGMENT_PRUNE_WINDOW_SECONDS * 1000;
+    const previousSegments = recentSegmentsRef.current;
 
-    recentSegmentsRef.current = [...recentSegmentsRef.current, segment]
+    const nextSegments = [...previousSegments, segment]
       .filter((candidate) => {
         const candidateEndMs = toTimestampMs(candidate.endedAtIso);
         return candidateEndMs !== null && candidateEndMs >= pruneBeforeMs;
@@ -365,6 +659,18 @@ export default function ExamSessionScreen() {
         const rightStart = toTimestampMs(right.startedAtIso) ?? 0;
         return leftStart - rightStart;
       });
+
+    recentSegmentsRef.current = nextSegments;
+
+    const retainedUris = new Set(nextSegments.map((candidate) => normalizeClipUri(candidate.uri)));
+    const droppedManagedUris = previousSegments
+      .map((candidate) => normalizeClipUri(candidate.uri))
+      .filter((candidateUri) => candidateUri && !retainedUris.has(candidateUri))
+      .filter((candidateUri) => isManagedProctoringClipUri(candidateUri));
+
+    if (droppedManagedUris.length > 0) {
+      void Promise.all(droppedManagedUris.map((clipUri) => deleteClipFileIfPresent(clipUri)));
+    }
   }, []);
 
   const resolvePendingTrailingEvidence = useCallback(
@@ -490,7 +796,16 @@ export default function ExamSessionScreen() {
           detectorSessionId,
           durationSeconds: clip.durationSeconds,
           eventEndOffsetSeconds: Number(event.end_timestamp_seconds),
+          eventDurationSeconds:
+            typeof event.duration_seconds === 'number' && Number.isFinite(event.duration_seconds)
+              ? Math.max(0, event.duration_seconds)
+              : Math.max(
+                  0,
+                  Number(event.end_timestamp_seconds) - Number(event.start_timestamp_seconds)
+                ),
           eventStartOffsetSeconds: Number(event.start_timestamp_seconds),
+          severity: typeof event.severity === 'string' ? event.severity : null,
+          signalCode: typeof event.signal_code === 'string' ? event.signal_code : null,
           requestedLeadSeconds: EVIDENCE_LEAD_SECONDS,
           requestedTrailSeconds: EVIDENCE_TRAIL_SECONDS,
           wasTruncated: missingLeadCoverage || needsNextSegment,
@@ -544,7 +859,6 @@ export default function ExamSessionScreen() {
         }
       }
 
-      setFlaggedMoments((current) => current + events.length);
       return evidenceUploadFailed;
     },
     [uploadSegmentIfNeeded]
@@ -576,7 +890,7 @@ export default function ExamSessionScreen() {
                 aiSessionId: overrideSessionId,
               };
         try {
-          return await analyzeVideoSummary(payload);
+          return buildActionableDetectorSummary(await analyzeVideoSummary(payload));
         } catch (error) {
           const message = toErrorMessage(error, 'Live analysis request failed.').toLowerCase();
           const shouldRetryAfterFinalize =
@@ -589,7 +903,7 @@ export default function ExamSessionScreen() {
 
           await waitForClipFinalizationRetryWindow(payload.clipUri);
           await sleep(260);
-          return analyzeVideoSummary(payload);
+          return buildActionableDetectorSummary(await analyzeVideoSummary(payload));
         }
       };
 
@@ -636,6 +950,15 @@ export default function ExamSessionScreen() {
 
       const mergedMetrics = mergeAggregateMetrics(aggregateMetricsRef.current, summary);
       aggregateMetricsRef.current = mergedMetrics;
+      const latestWindowLabel = detectorLabelToAnalysisLabel(summary.final_label);
+      const latestWindowFlaggedCount = Math.max(0, Math.trunc(Number(summary.suspicious_event_count ?? 0)));
+      const latestWindowObservationSummary =
+        latestWindowFlaggedCount > 0
+          ? buildDetectorObservationSummary(summary, 3, { includeAlertReasons: true })
+          : '';
+      setLatestWindowLabel(latestWindowLabel);
+      setLatestWindowEventCount(latestWindowFlaggedCount);
+      setLatestWindowObservation(latestWindowObservationSummary);
 
       registerRecentSegment(segment);
       let syncWarning = false;
@@ -690,8 +1013,8 @@ export default function ExamSessionScreen() {
       }
 
       setProctoringMessage(
-        summary.events.length > 0
-          ? `${summary.events.length} suspicious event(s) flagged in the latest window.`
+        latestWindowFlaggedCount > 0
+          ? `${latestWindowFlaggedCount} suspicious event(s) detected in the latest window.${latestWindowObservationSummary ? ` Reasons: ${latestWindowObservationSummary}` : ''}`
           : 'Live analysis running. No suspicious activity in the latest window.'
       );
     },
@@ -740,11 +1063,21 @@ export default function ExamSessionScreen() {
       // Give the native recorder a moment to finalize container metadata (moov atom).
       await sleep(240);
       await waitForRecordedClipReady(recording.uri, {
-        minBytes: 6144,
+        minBytes: CLIP_READY_MIN_BYTES,
         pollMs: 150,
         stableReads: 3,
         timeoutMs: 6500,
       });
+      let clipUri = normalizeClipUri(recording.uri);
+      if (clipUri) {
+        try {
+          clipUri = await copyClipIntoManagedCache(clipUri);
+        } catch {
+          // Continue with the original URI if managed cache copy fails.
+          clipUri = normalizeClipUri(recording.uri);
+        }
+      }
+
       const durationSeconds = Math.max(
         0.1,
         (new Date(endedAtIso).getTime() - new Date(startedAtIso).getTime()) / 1000
@@ -754,7 +1087,7 @@ export default function ExamSessionScreen() {
         durationSeconds,
         endedAtIso,
         startedAtIso,
-        uri: recording.uri,
+        uri: clipUri || recording.uri,
       };
     } finally {
       isRecordingRef.current = false;
@@ -786,16 +1119,25 @@ export default function ExamSessionScreen() {
           if (isLikelyUnfinalizedClipError(message)) {
             setProctoringStatus('active');
             setProctoringMessage('Finalizing recorded clip... retrying this window automatically.');
+            await clearManagedProctoringClipCache({
+              keepUris: recentSegmentsRef.current.map((segment) => segment.uri),
+            });
             await sleep(320);
             continue;
           }
           setProctoringStatus('error');
           setProctoringMessage(message);
+          await clearManagedProctoringClipCache({
+            keepUris: recentSegmentsRef.current.map((segment) => segment.uri),
+          });
           await sleep(700);
           continue;
         }
 
         if (!clip) {
+          await clearManagedProctoringClipCache({
+            keepUris: recentSegmentsRef.current.map((segment) => segment.uri),
+          });
           await sleep(160);
           continue;
         }
@@ -824,6 +1166,10 @@ export default function ExamSessionScreen() {
 
           setProctoringStatus('error');
           setProctoringMessage(message);
+        } finally {
+          await clearManagedProctoringClipCache({
+            keepUris: recentSegmentsRef.current.map((segment) => segment.uri),
+          });
         }
       }
     } finally {
@@ -843,28 +1189,35 @@ export default function ExamSessionScreen() {
         }
       }
 
+      for (let attempts = 0; attempts < 80; attempts += 1) {
+        if (!monitorLoopActiveRef.current && !isRecordingRef.current) {
+          break;
+        }
+        await sleep(120);
+      }
+
       const handle = proctoringHandleRef.current;
-      if (!handle) {
-        return;
+      if (handle) {
+        try {
+          await endProctoringSession({
+            analysisSessionId: handle.analysisSessionId,
+            finalMetrics: aggregateMetricsRef.current,
+            finalStatus,
+          });
+        } catch {
+          // Keep exam flow resilient; this can be retried by invigilator review if needed.
+        }
+
+        await deleteDetectorSession(handle.aiSessionId);
       }
 
-      try {
-        await endProctoringSession({
-          analysisSessionId: handle.analysisSessionId,
-          finalMetrics: aggregateMetricsRef.current,
-          finalStatus,
-        });
-      } catch {
-        // Keep exam flow resilient; this can be retried by invigilator review if needed.
-      }
-
-      await deleteDetectorSession(handle.aiSessionId);
       proctoringHandleRef.current = null;
       heartbeatRefreshBusyRef.current = false;
       pendingTrailingEvidenceRef.current = [];
       recentSegmentsRef.current = [];
       evidenceUploadBlockedRef.current = false;
       lastSuccessfulAnalysisAtRef.current = null;
+      await clearManagedProctoringClipCache();
 
       if (finalStatus === 'submitted') {
         setProctoringStatus('paused');
@@ -895,8 +1248,11 @@ export default function ExamSessionScreen() {
       lastSuccessfulAnalysisAtRef.current = null;
       startupWatchActiveRef.current = false;
       aggregateMetricsRef.current = createEmptyAggregateMetrics();
-      setFlaggedMoments(0);
+      setLatestWindowLabel(null);
+      setLatestWindowEventCount(0);
+      setLatestWindowObservation('');
       setCameraReady(false);
+      await clearManagedProctoringClipCache();
 
       try {
         if (!examId) {
@@ -1197,65 +1553,212 @@ export default function ExamSessionScreen() {
     void handleSubmit();
   }, [errorMessage, handleSubmit, isLoading, isSubmitting, remainingSeconds, sessionData]);
 
-  const cameraStatusTone =
+  const aggregateMetrics = aggregateMetricsRef.current;
+  const hasSampledFrames = aggregateMetrics.framesSampled > 0;
+  const totalFlaggedMoments = aggregateMetrics.suspiciousEventCount;
+  const peakRiskPercent = hasSampledFrames ? clampPercent(aggregateMetrics.maxScore) : 0;
+  const averageRiskPercent = hasSampledFrames ? clampPercent(aggregateMetrics.averageScore) : 0;
+  const sampleCoveragePercent =
+    aggregateMetrics.framesProcessed > 0
+      ? clampPercent((aggregateMetrics.framesSampled / aggregateMetrics.framesProcessed) * 100)
+      : 0;
+  const detectionDensityPercent =
+    aggregateMetrics.framesSampled > 0
+      ? clampPercent((aggregateMetrics.detections / aggregateMetrics.framesSampled) * 100)
+      : 0;
+  const eventsPercent = clampPercent(Math.min(totalFlaggedMoments * 20, 100));
+  const metrics = [
+    {
+      label: 'RISK',
+      percent: peakRiskPercent,
+      value: `${peakRiskPercent}%`,
+    },
+    {
+      label: 'AVG',
+      percent: averageRiskPercent,
+      value: `${averageRiskPercent}%`,
+    },
+    {
+      label: 'SAMP',
+      percent: sampleCoveragePercent,
+      value: `${sampleCoveragePercent}%`,
+    },
+    {
+      label: 'DET',
+      percent: detectionDensityPercent,
+      value: String(aggregateMetrics.detections),
+    },
+    {
+      label: 'EVT',
+      percent: eventsPercent,
+      value: String(totalFlaggedMoments),
+    },
+  ];
+  const effectiveWindowLabel =
+    latestWindowLabel ?? (hasSampledFrames ? aggregateMetrics.finalLabel : null);
+  const faceDetected =
+    hasSampledFrames && proctoringStatus !== 'error' && effectiveWindowLabel !== 'NO_FACE';
+  const onScreen = hasSampledFrames && faceDetected && effectiveWindowLabel === 'NORMAL';
+  const hasMonitoringAlert = proctoringStatus === 'error' || latestWindowEventCount > 0;
+  const monitoringAlertMessage =
     proctoringStatus === 'error'
-      ? '#ef476f'
-      : proctoringStatus === 'active'
-      ? palette.success
-      : palette.warning;
+      ? proctoringMessage
+      : !hasSampledFrames
+      ? 'Live monitoring active. Waiting for first detection window...'
+      : latestWindowEventCount > 0
+      ? `${latestWindowEventCount} suspicious event(s) detected in the latest window.${latestWindowObservation ? ` Reasons: ${latestWindowObservation}` : ''}`
+      : 'No suspicious activity in the latest 5-second window.';
+  const faceBadgeMode = !hasSampledFrames ? 'pending' : faceDetected ? 'good' : 'warning';
+  const screenBadgeMode = !hasSampledFrames ? 'pending' : onScreen ? 'good' : 'warning';
+  const normalizedCourseCode = String(sessionData?.courseCode ?? '')
+    .trim()
+    .toUpperCase();
+  const normalizedExamTitle = String(sessionData?.examTitle ?? sessionData?.courseTitle ?? '').trim();
+  const examMeta =
+    normalizedCourseCode && normalizedExamTitle
+      ? `${normalizedCourseCode} . ${normalizedExamTitle.toUpperCase()}`
+      : isLoading
+      ? 'LOADING EXAM DETAILS...'
+      : errorMessage
+      ? 'EXAM DETAILS UNAVAILABLE'
+      : 'LOADING EXAM...';
+  const gazeTag = normalizedCourseCode.replace(/[^A-Z0-9]/g, '').slice(0, 2) || 'ST';
 
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.headerRow}>
           <Pressable onPress={() => router.back()} style={styles.backButton}>
-            <Feather color={palette.mutedStrong} name="chevron-left" size={18} />
+            <Feather color="#6483a6" name="chevron-left" size={18} />
           </Pressable>
-          <View style={styles.headerTitleWrap}>
-            <Text style={styles.headerCode}>{sessionData?.courseCode ?? 'COURSE'}</Text>
-            <Text style={styles.headerTitle}>{sessionData?.examTitle ?? 'Exam Session'}</Text>
-          </View>
+          <Text numberOfLines={1} style={styles.headerMeta}>
+            {examMeta}
+          </Text>
           <View style={styles.timerBox}>
             <Text style={styles.timerText}>{formatCountdown(remainingSeconds)}</Text>
           </View>
         </View>
 
         {!isLoading && !errorMessage ? (
-          <View style={styles.proctoringCard}>
-            <View style={styles.proctoringHeader}>
-              <View style={[styles.liveDot, { backgroundColor: cameraStatusTone }]} />
-              <Text style={[styles.proctoringLabel, { color: cameraStatusTone }]}>
-                LIVE ANALYSIS
-              </Text>
-              <Text style={styles.proctoringFlags}>{flaggedMoments} FLAGGED</Text>
-            </View>
-            <Text style={styles.proctoringMessage}>{proctoringMessage}</Text>
-
-            {cameraPermission?.granted ? (
-              <CameraView
-                active
-                facing="front"
-                mode="video"
-                mute
-                onCameraReady={() => setCameraReady(true)}
-                onMountError={() => {
-                  setProctoringStatus('error');
-                  setProctoringMessage('Camera failed to start. Check permissions and retry.');
-                }}
-                ref={cameraRef}
-                style={styles.cameraPreview}
+          <View style={styles.monitorCard}>
+            <View style={[styles.monitorAlert, hasMonitoringAlert ? styles.monitorAlertWarning : null]}>
+              <Feather
+                color={hasMonitoringAlert ? '#f29915' : '#31b994'}
+                name={hasMonitoringAlert ? 'alert-triangle' : 'check-circle'}
+                size={14}
               />
-            ) : (
+              <Text style={[styles.monitorAlertText, hasMonitoringAlert ? styles.monitorAlertTextWarning : null]}>
+                {monitoringAlertMessage}
+              </Text>
+            </View>
+
+            <View style={styles.monitorStatsRow}>
+              <View style={styles.gazeCard}>
+                <View style={styles.gazeBackdrop}>
+                  {cameraPermission?.granted ? (
+                    <CameraView
+                      active
+                      facing="front"
+                      mode="video"
+                      mute
+                      onCameraReady={() => setCameraReady(true)}
+                      onMountError={() => {
+                        setProctoringStatus('error');
+                        setProctoringMessage('Camera failed to start. Check permissions and retry.');
+                      }}
+                      ref={cameraRef}
+                      style={styles.cameraPreview}
+                    />
+                  ) : (
+                    <View style={styles.cameraPlaceholder}>
+                      <Feather color="#7b8fa7" name="camera-off" size={16} />
+                    </View>
+                  )}
+                  <View pointerEvents="none" style={styles.gazeOuterTarget} />
+                  <View pointerEvents="none" style={styles.gazeInnerTarget} />
+                  <View pointerEvents="none" style={styles.gazeDot} />
+                  <View pointerEvents="none" style={styles.gazeTag}>
+                    <Text style={styles.gazeTagText}>{gazeTag}</Text>
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.metricsPanel}>
+                {metrics.map((metric) => (
+                  <View key={metric.label} style={styles.metricRow}>
+                    <Text style={styles.metricLabel}>{metric.label}</Text>
+                    <View style={styles.metricTrack}>
+                      <View style={[styles.metricFill, { width: `${metric.percent}%` }]} />
+                    </View>
+                    <Text style={styles.metricValue}>{metric.value}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.monitorBadgeRow}>
+              <View
+                style={[
+                  styles.monitorBadge,
+                  faceBadgeMode === 'good'
+                    ? styles.monitorBadgeGood
+                    : faceBadgeMode === 'pending'
+                    ? styles.monitorBadgePending
+                    : styles.monitorBadgeWarn,
+                ]}>
+                <Text
+                  style={[
+                    styles.monitorBadgeText,
+                    faceBadgeMode === 'good'
+                      ? styles.monitorBadgeTextGood
+                      : faceBadgeMode === 'pending'
+                      ? styles.monitorBadgeTextPending
+                      : null,
+                  ]}>
+                  {faceBadgeMode === 'pending' ? 'FACE WAIT' : faceBadgeMode === 'good' ? 'FACE OK' : 'FACE ALERT'}
+                </Text>
+              </View>
+              <View
+                style={[
+                  styles.monitorBadge,
+                  screenBadgeMode === 'good'
+                    ? styles.monitorBadgeGood
+                    : screenBadgeMode === 'pending'
+                    ? styles.monitorBadgePending
+                    : styles.monitorBadgeWarn,
+                ]}>
+                <Text
+                  style={[
+                    styles.monitorBadgeText,
+                    screenBadgeMode === 'good'
+                      ? styles.monitorBadgeTextGood
+                      : screenBadgeMode === 'pending'
+                      ? styles.monitorBadgeTextPending
+                      : null,
+                  ]}>
+                  {screenBadgeMode === 'pending'
+                    ? 'SCREEN WAIT'
+                    : screenBadgeMode === 'good'
+                    ? 'ON SCREEN'
+                    : 'OFF SCREEN'}
+                </Text>
+              </View>
+              <Text style={styles.flagCount}>{totalFlaggedMoments} FLAGGED</Text>
+            </View>
+
+            <Text style={styles.monitorHint}>{proctoringMessage}</Text>
+
+            {!cameraPermission?.granted ? (
               <Pressable onPress={() => void requestCameraPermission()} style={styles.permissionButton}>
-                <Text style={styles.permissionButtonText}>Enable camera for live analysis</Text>
+                <Text style={styles.permissionButtonText}>Enable camera for exam monitoring</Text>
               </Pressable>
-            )}
+            ) : null}
           </View>
         ) : null}
 
         {isLoading ? (
           <View style={styles.loadingCard}>
-            <ActivityIndicator color={palette.teal} size="small" />
+            <ActivityIndicator color="#18b394" size="small" />
             <Text style={styles.loadingText}>Loading exam questions...</Text>
           </View>
         ) : null}
@@ -1270,7 +1773,7 @@ export default function ExamSessionScreen() {
         ) : null}
 
         {!isLoading && !errorMessage && currentQuestion ? (
-          <>
+          <View style={styles.questionSection}>
             <View style={styles.progressHeader}>
               <Text style={styles.progressLabel}>
                 Q{questionIndex + 1} / {totalQuestions}
@@ -1300,34 +1803,63 @@ export default function ExamSessionScreen() {
               })}
             </View>
 
+            <Text style={styles.answerCounter}>
+              {answeredCount} / {totalQuestions} answered
+            </Text>
+
+            {questionIndex < totalQuestions - 1 ? (
+              <View style={styles.navigationRow}>
+                <Pressable
+                  disabled={questionIndex === 0}
+                  onPress={() => setQuestionIndex((index) => Math.max(0, index - 1))}
+                  style={[
+                    styles.navigationButton,
+                    styles.navigationButtonSecondary,
+                    questionIndex === 0 ? styles.navigationButtonDisabled : null,
+                  ]}>
+                  <Text style={styles.navigationButtonTextSecondary}>Previous</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => setQuestionIndex((index) => Math.min(totalQuestions - 1, index + 1))}
+                  style={styles.navigationButton}>
+                  <Text style={styles.navigationButtonText}>Next Question</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <Pressable onPress={() => setShowConfirm(true)} style={styles.submitButton}>
+                <Text style={styles.submitText}>Submit Exam</Text>
+              </Pressable>
+            )}
+          </View>
+        ) : null}
+
+        {!isLoading && !errorMessage && !currentQuestion && totalQuestions > 0 ? (
+          <View style={styles.emptyQuestionState}>
+            <Text style={styles.emptyQuestionText}>
+              Unable to load this question. Move back or reopen the exam session.
+            </Text>
             <View style={styles.navigationRow}>
               <Pressable
                 disabled={questionIndex === 0}
                 onPress={() => setQuestionIndex((index) => Math.max(0, index - 1))}
                 style={[
                   styles.navigationButton,
+                  styles.navigationButtonSecondary,
                   questionIndex === 0 ? styles.navigationButtonDisabled : null,
                 ]}>
-                <Text style={styles.navigationButtonText}>Previous</Text>
+                <Text style={styles.navigationButtonTextSecondary}>Previous</Text>
               </Pressable>
-
-              {questionIndex < totalQuestions - 1 ? (
-                <Pressable
-                  onPress={() => setQuestionIndex((index) => Math.min(totalQuestions - 1, index + 1))}
-                  style={styles.navigationButton}>
-                  <Text style={styles.navigationButtonText}>Next</Text>
-                </Pressable>
-              ) : (
-                <Pressable onPress={() => setShowConfirm(true)} style={styles.submitButton}>
-                  <Text style={styles.submitText}>Submit Exam</Text>
-                </Pressable>
-              )}
+              <Pressable
+                disabled={questionIndex >= totalQuestions - 1}
+                onPress={() => setQuestionIndex((index) => Math.min(totalQuestions - 1, index + 1))}
+                style={[
+                  styles.navigationButton,
+                  questionIndex >= totalQuestions - 1 ? styles.navigationButtonDisabled : null,
+                ]}>
+                <Text style={styles.navigationButtonText}>Next Question</Text>
+              </Pressable>
             </View>
-
-            <Text style={styles.answerCounter}>
-              {answeredCount} of {totalQuestions} questions answered
-            </Text>
-          </>
+          </View>
         ) : null}
       </ScrollView>
 
@@ -1350,7 +1882,7 @@ export default function ExamSessionScreen() {
               onPress={() => void handleSubmit()}
               style={[styles.modalPrimaryButton, isSubmitting ? styles.primaryButtonDisabled : null]}>
               {isSubmitting ? (
-                <ActivityIndicator color={palette.text} size="small" />
+                <ActivityIndicator color="#0f172a" size="small" />
               ) : (
                 <Text style={styles.modalPrimaryText}>Yes, submit</Text>
               )}
@@ -1371,100 +1903,174 @@ export default function ExamSessionScreen() {
 
 const styles = StyleSheet.create({
   answerCounter: {
-    color: palette.mutedStrong,
+    color: '#6e86a4',
     fontSize: type.body,
-    marginTop: 14,
-    textAlign: 'center',
+    marginTop: 16,
   },
   backButton: {
     alignItems: 'center',
-    height: 28,
+    borderColor: '#dce8f3',
+    borderWidth: 1,
+    height: 30,
     justifyContent: 'center',
-    width: 28,
+    width: 30,
+  },
+  cameraPlaceholder: {
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'center',
   },
   cameraPreview: {
-    borderColor: '#1c3354',
-    borderWidth: 1,
-    height: 170,
-    marginTop: 12,
-    overflow: 'hidden',
+    height: '100%',
+    opacity: 0.85,
+    width: '100%',
   },
   choiceBox: {
-    borderColor: palette.border,
+    borderColor: '#bad2e8',
     borderWidth: 1,
     height: 18,
     marginTop: 2,
     width: 18,
   },
   choiceBoxActive: {
-    backgroundColor: palette.teal,
-    borderColor: palette.teal,
+    backgroundColor: '#18b394',
+    borderColor: '#18b394',
   },
   content: {
     alignSelf: 'center',
-    maxWidth: layout.maxWidth,
+    maxWidth: Math.min(layout.maxWidth, 540),
     paddingBottom: layout.bottomPadding,
     paddingHorizontal: layout.screenPaddingWide,
     width: '100%',
   },
+  emptyQuestionState: {
+    borderColor: '#d5e4f3',
+    borderWidth: 1,
+    marginTop: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 16,
+  },
+  emptyQuestionText: {
+    color: '#5d7393',
+    fontSize: type.body,
+    lineHeight: 20,
+  },
   errorAction: {
-    borderColor: '#b34954',
+    borderColor: '#df7d7d',
     borderWidth: 1,
     marginTop: 12,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingVertical: 8,
   },
   errorActionText: {
-    color: '#ff9ea8',
+    color: '#9e2a2a',
     fontSize: type.body,
     fontWeight: '700',
   },
   errorCard: {
     alignItems: 'flex-start',
-    backgroundColor: '#2f1116',
-    borderColor: '#8f2d37',
+    backgroundColor: '#fff4f4',
+    borderColor: '#f0cccc',
     borderWidth: 1,
-    marginBottom: 14,
     marginTop: 12,
     paddingHorizontal: 12,
     paddingVertical: 12,
   },
   errorText: {
-    color: '#ff9ea8',
+    color: '#9e2a2a',
     fontSize: type.body,
   },
-  headerCode: {
-    color: palette.mutedStrong,
+  flagCount: {
+    color: '#6c84a4',
     fontSize: type.tiny,
-    letterSpacing: 1.2,
+    fontWeight: '700',
+    marginLeft: 'auto',
+  },
+  gazeBackdrop: {
+    backgroundColor: '#e8f4ff',
+    borderColor: '#c2dcf0',
+    borderWidth: 1,
+    flex: 1,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  gazeCard: {
+    borderColor: '#dbe8f3',
+    borderWidth: 1,
+    height: 88,
+    padding: 6,
+    width: 92,
+  },
+  gazeDot: {
+    backgroundColor: '#e63946',
+    borderRadius: 99,
+    height: 6,
+    left: '16%',
+    position: 'absolute',
+    top: '20%',
+    width: 6,
+  },
+  gazeInnerTarget: {
+    borderColor: '#15a990',
+    borderWidth: 1,
+    height: '40%',
+    left: '31%',
+    position: 'absolute',
+    top: '31%',
+    width: '40%',
+  },
+  gazeOuterTarget: {
+    borderColor: '#15a990',
+    borderStyle: 'dashed',
+    borderWidth: 1,
+    height: '74%',
+    left: '13%',
+    position: 'absolute',
+    top: '13%',
+    width: '74%',
+  },
+  gazeTag: {
+    alignItems: 'center',
+    backgroundColor: '#c9f4e7',
+    borderColor: '#15a990',
+    borderWidth: 1,
+    bottom: 8,
+    left: 8,
+    minWidth: 28,
+    paddingHorizontal: 3,
+    position: 'absolute',
+  },
+  gazeTagText: {
+    color: '#0f7566',
+    fontSize: type.tiny,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  headerMeta: {
+    color: '#5f7898',
+    flex: 1,
+    fontFamily: Platform.select({
+      android: 'monospace',
+      default: undefined,
+      ios: 'Courier',
+      web: "'Courier New', Courier, monospace",
+    }),
+    fontSize: type.body,
+    letterSpacing: 0.8,
+    marginLeft: 10,
+    marginRight: 12,
     textTransform: 'uppercase',
   },
   headerRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 14,
-  },
-  headerTitle: {
-    color: palette.text,
-    fontSize: type.bodyLarge,
-    fontWeight: '700',
-    marginTop: 4,
-  },
-  headerTitleWrap: {
-    flex: 1,
-    marginLeft: 10,
-    marginRight: 8,
-  },
-  liveDot: {
-    borderRadius: 99,
-    height: 7,
-    width: 7,
+    marginBottom: 10,
+    marginTop: 2,
   },
   loadingCard: {
     alignItems: 'center',
-    backgroundColor: palette.panel,
-    borderColor: palette.border,
+    backgroundColor: '#f8fcff',
+    borderColor: '#dbe9f5',
     borderWidth: 1,
     flexDirection: 'row',
     gap: 8,
@@ -1473,213 +2079,340 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   loadingText: {
-    color: palette.mutedStrong,
+    color: '#5f7898',
     fontSize: type.body,
   },
+  metricFill: {
+    backgroundColor: '#17b892',
+    height: '100%',
+  },
+  metricLabel: {
+    color: '#4c6b8f',
+    fontFamily: Platform.select({
+      android: 'monospace',
+      default: undefined,
+      ios: 'Courier',
+      web: "'Courier New', Courier, monospace",
+    }),
+    fontSize: type.tiny,
+    letterSpacing: 0.8,
+    width: 40,
+  },
+  metricRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  metricTrack: {
+    backgroundColor: '#d5e5f2',
+    flex: 1,
+    height: 4,
+  },
+  metricValue: {
+    color: '#1d9b77',
+    fontSize: type.body,
+    fontWeight: '700',
+    textAlign: 'right',
+    width: 46,
+  },
+  metricsPanel: {
+    flex: 1,
+    gap: 12,
+    justifyContent: 'center',
+  },
   modalCard: {
-    backgroundColor: palette.panel,
-    borderColor: palette.border,
+    backgroundColor: '#ffffff',
+    borderColor: '#d5e4f3',
     borderWidth: 1,
     paddingHorizontal: 20,
     paddingVertical: 20,
-    width: '82%',
+    width: '84%',
   },
   modalCopy: {
-    color: palette.mutedStrong,
+    color: '#5d7393',
     fontSize: type.bodyLarge,
     lineHeight: 22,
-    marginTop: 12,
+    marginTop: 10,
   },
   modalCopyStrong: {
-    color: palette.text,
+    color: '#16263a',
     fontWeight: '800',
   },
   modalEyebrow: {
-    color: '#ff5a61',
+    color: '#cf4e4e',
     fontSize: type.label,
     letterSpacing: 2,
   },
   modalOverlay: {
     alignItems: 'center',
-    backgroundColor: 'rgba(2, 7, 18, 0.82)',
+    backgroundColor: 'rgba(5, 18, 38, 0.28)',
     flex: 1,
     justifyContent: 'center',
   },
   modalPrimaryButton: {
     alignItems: 'center',
-    backgroundColor: '#f14545',
+    backgroundColor: '#c9f4e7',
+    borderColor: '#15a990',
+    borderWidth: 1,
     marginTop: 20,
     paddingVertical: 14,
   },
   modalPrimaryText: {
-    color: palette.text,
+    color: '#0e6f61',
     fontSize: type.bodyLarge,
     fontWeight: '800',
   },
   modalSecondaryButton: {
     alignItems: 'center',
-    borderColor: palette.border,
+    borderColor: '#d5e4f3',
     borderWidth: 1,
     marginTop: 8,
     paddingVertical: 14,
   },
   modalSecondaryText: {
-    color: palette.mutedStrong,
+    color: '#5d7393',
     fontSize: type.bodyLarge,
   },
   modalTitle: {
-    color: palette.text,
+    color: '#142a43',
     fontSize: type.display,
     fontWeight: '800',
-    marginTop: 12,
+    marginTop: 10,
+  },
+  monitorAlert: {
+    alignItems: 'center',
+    borderBottomColor: '#dbe8f3',
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
+    minHeight: 48,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  monitorAlertText: {
+    color: '#3c6b82',
+    flex: 1,
+    fontSize: type.bodyLarge,
+    fontWeight: '600',
+  },
+  monitorAlertTextWarning: {
+    color: '#dd8405',
+  },
+  monitorAlertWarning: {
+    backgroundColor: '#fff8eb',
+  },
+  monitorBadge: {
+    alignItems: 'center',
+    borderColor: '#bee9dc',
+    borderWidth: 1,
+    minWidth: 88,
+    paddingHorizontal: 8,
+    paddingVertical: 7,
+  },
+  monitorBadgeGood: {
+    backgroundColor: '#f0fdf9',
+    borderColor: '#99e2d0',
+  },
+  monitorBadgeRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+  },
+  monitorBadgeText: {
+    color: '#cf6c00',
+    fontSize: type.label,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+  },
+  monitorBadgeTextGood: {
+    color: '#0f7f6e',
+  },
+  monitorBadgeTextPending: {
+    color: '#67829f',
+  },
+  monitorBadgePending: {
+    backgroundColor: '#f4f8fc',
+    borderColor: '#cedeed',
+  },
+  monitorBadgeWarn: {
+    backgroundColor: '#fff8ef',
+    borderColor: '#f3d8b1',
+  },
+  monitorCard: {
+    backgroundColor: '#ffffff',
+    borderColor: '#dbe8f3',
+    borderWidth: 1,
+    marginBottom: 14,
+  },
+  monitorHint: {
+    color: '#6b839f',
+    fontSize: type.tiny,
+    marginTop: 9,
+    paddingBottom: 10,
+    paddingHorizontal: 10,
+  },
+  monitorStatsRow: {
+    alignItems: 'stretch',
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 10,
+    paddingTop: 10,
   },
   navigationButton: {
     alignItems: 'center',
-    borderColor: palette.border,
+    backgroundColor: '#c9f4e7',
+    borderColor: '#15a990',
     borderWidth: 1,
     flex: 1,
-    paddingVertical: 14,
+    justifyContent: 'center',
+    minHeight: 44,
+    paddingHorizontal: 12,
   },
   navigationButtonDisabled: {
     opacity: 0.5,
   },
+  navigationButtonSecondary: {
+    backgroundColor: '#ffffff',
+    borderColor: '#d5e4f3',
+    flex: 0.46,
+  },
   navigationButtonText: {
-    color: palette.mutedStrong,
-    fontSize: type.bodyLarge,
+    color: '#0f7f6e',
+    fontSize: type.body,
+    fontWeight: '800',
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+  },
+  navigationButtonTextSecondary: {
+    color: '#5f7898',
+    fontSize: type.body,
     fontWeight: '700',
+    textTransform: 'uppercase',
   },
   navigationRow: {
     flexDirection: 'row',
     gap: 10,
-    marginTop: 18,
+    marginTop: 16,
   },
   optionCard: {
-    backgroundColor: palette.panel,
-    borderColor: palette.border,
+    alignItems: 'flex-start',
+    backgroundColor: '#ffffff',
+    borderColor: '#d8e6f3',
     borderWidth: 1,
     flexDirection: 'row',
     gap: 10,
     paddingHorizontal: 14,
-    paddingVertical: 15,
+    paddingVertical: 14,
   },
   optionCardActive: {
-    borderColor: palette.teal,
+    borderColor: '#16af8d',
   },
   optionKey: {
-    color: '#5f7fb0',
+    color: '#87a1bc',
     fontSize: type.bodyLarge,
+    fontWeight: '700',
     marginTop: 1,
   },
   optionText: {
-    color: palette.text,
+    color: '#6d86a7',
     flex: 1,
     fontSize: type.bodyLarge,
-    lineHeight: 23,
+    fontWeight: '600',
+    lineHeight: 24,
   },
   optionsList: {
-    gap: layout.cardGap,
+    gap: 12,
     marginTop: 16,
   },
   permissionButton: {
     alignItems: 'center',
-    borderColor: '#6f92c7',
+    borderColor: '#9fdccf',
     borderWidth: 1,
-    marginTop: 12,
-    paddingVertical: 14,
+    marginHorizontal: 10,
+    marginTop: 10,
+    paddingVertical: 11,
   },
   permissionButtonText: {
-    color: '#9eb4d8',
+    color: '#0f7f6e',
     fontSize: type.body,
     fontWeight: '700',
   },
   primaryButtonDisabled: {
-    opacity: 0.7,
-  },
-  proctoringCard: {
-    backgroundColor: '#0a1628',
-    borderColor: '#23406a',
-    borderWidth: 1,
-    marginBottom: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-  },
-  proctoringFlags: {
-    color: '#9fb7da',
-    fontSize: type.tiny,
-    fontWeight: '700',
-    letterSpacing: 1.1,
-    marginLeft: 'auto',
-  },
-  proctoringHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 8,
-  },
-  proctoringLabel: {
-    fontSize: type.label,
-    fontWeight: '700',
-    letterSpacing: 1.6,
-  },
-  proctoringMessage: {
-    color: '#9cb6d8',
-    fontSize: type.body,
-    marginTop: 8,
+    opacity: 0.6,
   },
   progressBar: {
-    backgroundColor: '#213457',
+    backgroundColor: '#d9e7f2',
     height: 2,
     marginTop: 8,
   },
   progressFill: {
-    backgroundColor: palette.teal,
+    backgroundColor: '#18b394',
     height: 2,
   },
   progressHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 18,
+    marginTop: 6,
   },
   progressLabel: {
-    color: '#7b97c5',
-    fontSize: 11,
+    color: '#6a86a7',
+    fontFamily: Platform.select({
+      android: 'monospace',
+      default: undefined,
+      ios: 'Courier',
+      web: "'Courier New', Courier, monospace",
+    }),
+    fontSize: type.body,
   },
   question: {
-    color: palette.text,
+    color: '#08213c',
     fontSize: type.title,
-    fontWeight: '800',
-    lineHeight: 26,
+    fontWeight: '700',
+    lineHeight: 31,
     marginTop: 18,
   },
+  questionSection: {
+    marginTop: 6,
+  },
   safeArea: {
-    backgroundColor: palette.background,
+    backgroundColor: '#f7fbff',
     flex: 1,
   },
   submitButton: {
     alignItems: 'center',
-    borderColor: '#0bba70',
+    borderColor: '#17b892',
     borderWidth: 1,
-    flex: 1,
-    justifyContent: 'center',
-    paddingVertical: 15,
+    marginTop: 20,
+    paddingVertical: 13,
   },
   submitText: {
-    color: '#1df886',
+    color: '#11a17f',
     fontSize: type.bodyLarge,
     fontWeight: '800',
-    letterSpacing: 1.3,
+    letterSpacing: 1.6,
+    textTransform: 'uppercase',
   },
   timerBox: {
     alignItems: 'center',
-    borderColor: palette.teal,
+    backgroundColor: '#ecfff8',
+    borderColor: '#97e1cd',
     borderWidth: 1,
     justifyContent: 'center',
-    minHeight: 32,
-    minWidth: 72,
-    paddingHorizontal: 8,
+    minHeight: 36,
+    minWidth: 76,
+    paddingHorizontal: 10,
   },
   timerText: {
-    color: palette.teal,
-    fontSize: type.title,
+    color: '#0e9c7c',
+    fontFamily: Platform.select({
+      android: 'monospace',
+      default: undefined,
+      ios: 'Courier',
+      web: "'Courier New', Courier, monospace",
+    }),
+    fontSize: type.bodyLarge,
     fontWeight: '800',
   },
 });
+

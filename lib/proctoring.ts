@@ -31,18 +31,32 @@ type InsertedSuspiciousEventRow = {
 };
 
 export type DetectorVideoEvent = {
+  duration_seconds?: number;
   end_frame_index: number;
   end_timestamp_seconds: number;
   frame_count: number;
   label: string;
   max_score: number | null;
   reason: string;
+  severity?: string | null;
+  signal_code?: string | null;
   start_frame_index: number;
+  start_timestamp_seconds: number;
+};
+
+type DetectorVideoAlert = {
+  duration_seconds?: number;
+  end_timestamp_seconds: number;
+  label: string;
+  reason: string;
+  severity?: string | null;
+  signal_code?: string | null;
   start_timestamp_seconds: number;
 };
 
 export type DetectorVideoSummary = {
   average_score: number;
+  alerts: DetectorVideoAlert[];
   detections: number;
   duration_seconds: number;
   events: DetectorVideoEvent[];
@@ -72,6 +86,7 @@ type DetectorVideoFrameResult = {
 };
 
 type DetectorVideoAnalysisResponse = Omit<DetectorVideoSummary, 'key_frames'> & {
+  alerts?: DetectorVideoAlert[];
   frame_results: DetectorVideoFrameResult[];
 };
 
@@ -116,7 +131,10 @@ export type SuspiciousEventEvidence = {
     detectorSessionId: string | null;
     durationSeconds: number;
     eventEndOffsetSeconds: number;
+    eventDurationSeconds: number;
     eventStartOffsetSeconds: number;
+    severity: string | null;
+    signalCode: string | null;
   };
   clipBundleVersion: number;
   requestedLeadSeconds: number;
@@ -288,7 +306,7 @@ function inferVideoExtensionFromUri(clipUri: string) {
 
 async function readLocalFileAsArrayBuffer(fileUri: string) {
   const info = await FileSystem.getInfoAsync(fileUri);
-  const fileSize = typeof info.size === 'number' ? info.size : 0;
+  const fileSize = 'size' in info && typeof info.size === 'number' ? info.size : 0;
   if (!info.exists || info.isDirectory || fileSize <= 0) {
     throw new Error('Suspicious clip segment file is empty or missing.');
   }
@@ -473,6 +491,18 @@ function toNumber(value: unknown) {
   return Number.isFinite(numeric) ? numeric : 0;
 }
 
+function normalizeSuspiciousEventCount(value: unknown) {
+  return Math.max(0, Math.trunc(toNumber(value)));
+}
+
+function resolveSuspiciousEventCount(value: unknown, fallbackCount: number) {
+  if (value === null || value === undefined || String(value).trim() === '') {
+    return Math.max(0, Math.trunc(fallbackCount));
+  }
+
+  return normalizeSuspiciousEventCount(value);
+}
+
 function toAnalysisLabel(value: unknown): AnalysisLabel {
   const label = String(value ?? '')
     .trim()
@@ -490,6 +520,83 @@ function toAnalysisLabel(value: unknown): AnalysisLabel {
   }
 
   return 'NO_FACE';
+}
+
+function normalizeObservationText(value: unknown) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  return value
+    .replace(/\s+/g, ' ')
+    .replace(/[.;,\s]+$/, '')
+    .trim();
+}
+
+export function buildDetectorObservationSummary(
+  summary: Pick<DetectorVideoSummary, 'alerts' | 'events' | 'key_frames'>,
+  maxItems = 3,
+  options?: {
+    includeAlertReasons?: boolean;
+    includeKeyFrameObservations?: boolean;
+  }
+) {
+  const includeAlertReasons = options?.includeAlertReasons ?? false;
+  const includeKeyFrameObservations = options?.includeKeyFrameObservations ?? false;
+  const sanitizedMaxItems = Math.max(1, Math.trunc(maxItems));
+  const rankedReasons = new Map<string, { count: number; firstSeenIndex: number; text: string }>();
+  let seenIndex = 0;
+
+  const registerReason = (rawReason: unknown) => {
+    const normalized = normalizeObservationText(rawReason);
+    if (!normalized) {
+      return;
+    }
+
+    const key = normalized.toLowerCase();
+    const current = rankedReasons.get(key);
+    if (current) {
+      current.count += 1;
+      return;
+    }
+
+    rankedReasons.set(key, {
+      count: 1,
+      firstSeenIndex: seenIndex,
+      text: normalized,
+    });
+    seenIndex += 1;
+  };
+
+  for (const event of summary.events ?? []) {
+    registerReason(event.reason);
+  }
+
+  if (includeAlertReasons) {
+    for (const alert of summary.alerts ?? []) {
+      registerReason(alert.reason);
+    }
+  }
+
+  if (includeKeyFrameObservations) {
+    for (const keyFrame of summary.key_frames ?? []) {
+      for (const observation of keyFrame.observations ?? []) {
+        registerReason(observation);
+      }
+    }
+  }
+
+  return Array.from(rankedReasons.values())
+    .sort((left, right) => {
+      if (right.count !== left.count) {
+        return right.count - left.count;
+      }
+
+      return left.firstSeenIndex - right.firstSeenIndex;
+    })
+    .slice(0, sanitizedMaxItems)
+    .map((item) => item.text)
+    .join('; ');
 }
 
 function toRiskLevel(value: number | null | undefined): RiskLevel {
@@ -530,7 +637,7 @@ export function mergeAggregateMetrics(
   const nextFramesSampled = current.framesSampled + Math.max(0, toNumber(summary.frames_sampled));
   const nextDetections = current.detections + Math.max(0, toNumber(summary.detections));
   const nextSuspiciousCount =
-    current.suspiciousEventCount + Math.max(0, toNumber(summary.suspicious_event_count));
+    current.suspiciousEventCount + resolveSuspiciousEventCount(summary.suspicious_event_count, summary.events.length);
   const nextMaxScore = Math.max(current.maxScore, Math.max(0, toNumber(summary.max_score)));
 
   const currentWeighted = current.averageScore * current.framesSampled;
@@ -544,13 +651,10 @@ export function mergeAggregateMetrics(
       ? summaryLabel
       : current.finalLabel;
 
-  const nextObservation =
-    summary.key_frames
-      ?.flatMap((keyFrame) => keyFrame.observations ?? [])
-      .find((observation) => observation && observation.trim().length > 0)
-      ?.trim() ??
-    summary.events?.[0]?.reason?.trim() ??
-    current.latestObservation;
+  const summaryObservation = buildDetectorObservationSummary(summary, 3, {
+    includeAlertReasons: true,
+  });
+  const nextObservation = summaryObservation || current.latestObservation;
 
   return {
     averageScore: nextAverage,
@@ -670,13 +774,13 @@ async function buildAnalyzeVideoFormData(params: {
   aiSessionId?: string | null;
   clipUri: string;
   includeMaxKeyFramesField: boolean;
+  includeLandmarksField: boolean;
   nativeUploadMode?: NativeVideoUploadMode;
   includeSamplingFields?: boolean;
   includeSessionIdField?: boolean;
   maxFrames: number;
   maxKeyFrames: number;
   sampleEveryNFrames: number;
-  includeLandmarksField: boolean;
 }) {
   const form = new FormData();
   const clipUriWithoutQuery = params.clipUri.split('?')[0] ?? '';
@@ -802,11 +906,56 @@ function summarizeVideoAnalysisPayload(
     timestamp_seconds: frame.timestamp_seconds,
   }));
 
+  const normalizedAlerts = (analysisPayload.alerts ?? []).map((alert, index) => ({
+    duration_seconds:
+      typeof alert.duration_seconds === 'number' && Number.isFinite(alert.duration_seconds)
+        ? Math.max(0, alert.duration_seconds)
+        : Math.max(
+            0,
+            toNumber(alert.end_timestamp_seconds) - toNumber(alert.start_timestamp_seconds)
+          ),
+    end_frame_index: 0,
+    end_timestamp_seconds: toNumber(alert.end_timestamp_seconds),
+    frame_count: 0,
+    label: String(alert.label ?? 'SUSPICIOUS').trim().toUpperCase(),
+    max_score: null,
+    reason: String(alert.reason ?? '').trim() || 'Suspicious behavior detected.',
+    severity: String(alert.severity ?? '').trim() || null,
+    signal_code: String(alert.signal_code ?? '').trim() || null,
+    start_frame_index: index,
+    start_timestamp_seconds: toNumber(alert.start_timestamp_seconds),
+  }));
+
+  const normalizedEvents = (analysisPayload.events ?? []).map((event, index) => ({
+    duration_seconds:
+      typeof event.duration_seconds === 'number' && Number.isFinite(event.duration_seconds)
+        ? Math.max(0, event.duration_seconds)
+        : Math.max(
+            0,
+            toNumber(event.end_timestamp_seconds) - toNumber(event.start_timestamp_seconds)
+          ),
+    end_frame_index: Math.max(0, Math.trunc(toNumber(event.end_frame_index))),
+    end_timestamp_seconds: toNumber(event.end_timestamp_seconds),
+    frame_count: Math.max(0, Math.trunc(toNumber(event.frame_count))),
+    label: String(event.label ?? 'SUSPICIOUS').trim().toUpperCase(),
+    max_score:
+      event.max_score === null || event.max_score === undefined ? null : toNumber(event.max_score),
+    reason: String(event.reason ?? '').trim() || 'Suspicious behavior detected.',
+    severity: String(event.severity ?? '').trim() || null,
+    signal_code: String(event.signal_code ?? '').trim() || null,
+    start_frame_index:
+      Number.isFinite(toNumber(event.start_frame_index)) && toNumber(event.start_frame_index) > 0
+        ? Math.max(0, Math.trunc(toNumber(event.start_frame_index)))
+        : index,
+    start_timestamp_seconds: toNumber(event.start_timestamp_seconds),
+  }));
+
   return {
     average_score: analysisPayload.average_score,
+    alerts: normalizedAlerts,
     detections: analysisPayload.detections,
     duration_seconds: analysisPayload.duration_seconds,
-    events: analysisPayload.events ?? [],
+    events: normalizedEvents,
     filename: analysisPayload.filename,
     final_label: analysisPayload.final_label,
     fps: analysisPayload.fps,
@@ -815,7 +964,10 @@ function summarizeVideoAnalysisPayload(
     key_frames: keyFrames,
     max_score: analysisPayload.max_score,
     session_id: analysisPayload.session_id,
-    suspicious_event_count: analysisPayload.suspicious_event_count,
+    suspicious_event_count: resolveSuspiciousEventCount(
+      analysisPayload.suspicious_event_count,
+      normalizedEvents.length
+    ),
   };
 }
 
@@ -897,8 +1049,24 @@ export async function analyzeVideoSummary(params: {
     });
 
     if (summaryResponse.ok) {
-      const payload = (await summaryResponse.json()) as DetectorVideoSummary;
-      return payload;
+      const payload = (await summaryResponse.json()) as DetectorVideoSummary & {
+        alerts?: DetectorVideoAlert[];
+      };
+      if (Array.isArray(payload.key_frames) && Array.isArray(payload.events)) {
+        return {
+          ...payload,
+          alerts: Array.isArray(payload.alerts) ? payload.alerts : [],
+          suspicious_event_count: resolveSuspiciousEventCount(
+            payload.suspicious_event_count,
+            payload.events.length
+          ),
+        };
+      }
+
+      return summarizeVideoAnalysisPayload(
+        payload as unknown as DetectorVideoAnalysisResponse,
+        params.maxKeyFrames
+      );
     }
 
     const summaryDetail = await getDetectorErrorDetail(summaryResponse);
@@ -917,8 +1085,8 @@ export async function analyzeVideoSummary(params: {
   });
 
   if (!videoResponse.ok) {
-    const detail = await getDetectorErrorDetail(videoResponse);
-    throw new Error(detail || `Detector rejected the video analysis request (${videoResponse.status}).`);
+    const videoDetail = await getDetectorErrorDetail(videoResponse);
+    throw new Error(videoDetail || `Detector rejected the video analysis request (${videoResponse.status}).`);
   }
 
   const payload = (await videoResponse.json()) as DetectorVideoAnalysisResponse;
@@ -975,10 +1143,8 @@ export async function ensureActiveProctoringSession({
   }
 
   if (currentSession) {
-    let detectorSessionId = String(currentSession.backend_session_id ?? '').trim() || null;
-    if (!detectorSessionId) {
-      detectorSessionId = await createDetectorSession();
-    }
+    const previousDetectorSessionId = String(currentSession.backend_session_id ?? '').trim() || null;
+    const detectorSessionId = await createDetectorSession();
 
     const { error: activateError } = await supabase
       .from('analysis_sessions')
@@ -994,6 +1160,10 @@ export async function ensureActiveProctoringSession({
 
     if (activateError) {
       throw new Error(`Unable to activate proctoring session: ${activateError.message}`);
+    }
+
+    if (previousDetectorSessionId && previousDetectorSessionId !== detectorSessionId) {
+      void deleteDetectorSession(previousDetectorSessionId);
     }
 
     return {
@@ -1245,7 +1415,10 @@ export function buildSuspiciousEvidenceTemplate({
   detectorSessionId,
   durationSeconds,
   eventEndOffsetSeconds,
+  eventDurationSeconds,
   eventStartOffsetSeconds,
+  severity,
+  signalCode,
   requestedLeadSeconds,
   requestedTrailSeconds,
   wasTruncated,
@@ -1255,7 +1428,10 @@ export function buildSuspiciousEvidenceTemplate({
   detectorSessionId: string | null;
   durationSeconds: number;
   eventEndOffsetSeconds: number;
+  eventDurationSeconds: number;
   eventStartOffsetSeconds: number;
+  severity?: string | null;
+  signalCode?: string | null;
   requestedLeadSeconds: number;
   requestedTrailSeconds: number;
   wasTruncated: boolean;
@@ -1267,7 +1443,10 @@ export function buildSuspiciousEvidenceTemplate({
       detectorSessionId,
       durationSeconds: Number(durationSeconds.toFixed(2)),
       eventEndOffsetSeconds: Number(eventEndOffsetSeconds.toFixed(2)),
+      eventDurationSeconds: Number(eventDurationSeconds.toFixed(2)),
       eventStartOffsetSeconds: Number(eventStartOffsetSeconds.toFixed(2)),
+      severity: String(severity ?? '').trim() || null,
+      signalCode: String(signalCode ?? '').trim() || null,
     },
     clipBundleVersion: 1,
     requestedLeadSeconds,
@@ -1305,7 +1484,16 @@ export function parseSuspiciousEvidence(value: unknown): SuspiciousEventEvidence
       detectorSessionId: String(ai.detectorSessionId ?? '') || null,
       durationSeconds: Math.max(0, toNumber(ai.durationSeconds)),
       eventEndOffsetSeconds: Math.max(0, toNumber(ai.eventEndOffsetSeconds)),
+      eventDurationSeconds:
+        typeof ai.eventDurationSeconds === 'number' && Number.isFinite(ai.eventDurationSeconds)
+          ? Math.max(0, ai.eventDurationSeconds)
+          : Math.max(
+              0,
+              toNumber(ai.eventEndOffsetSeconds) - toNumber(ai.eventStartOffsetSeconds)
+            ),
       eventStartOffsetSeconds: Math.max(0, toNumber(ai.eventStartOffsetSeconds)),
+      severity: String(ai.severity ?? '').trim() || null,
+      signalCode: String(ai.signalCode ?? '').trim() || null,
     },
     clipBundleVersion: Math.max(1, Math.trunc(toNumber(record.clipBundleVersion || 1))),
     requestedLeadSeconds: Math.max(0, toNumber(record.requestedLeadSeconds)),

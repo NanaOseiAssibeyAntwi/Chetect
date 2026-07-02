@@ -126,6 +126,15 @@ function toOptionLabel(index: number) {
   return String.fromCharCode(65 + index);
 }
 
+function ensureExamField(value: string, message: string) {
+  const normalized = value.trim();
+  if (!normalized) {
+    throw new Error(message);
+  }
+
+  return normalized;
+}
+
 async function getCurrentStudentProfile() {
   const {
     data: { user },
@@ -298,11 +307,21 @@ export async function fetchStudentExamSessionData(
     };
   });
 
+  const courseCode = ensureExamField(
+    String(course?.code ?? '').toUpperCase(),
+    'This exam is missing a course code. Contact your invigilator.'
+  );
+  const examTitle = ensureExamField(
+    String(exam.title ?? ''),
+    'This exam is missing a title. Contact your invigilator.'
+  );
+  const courseTitle = String(course?.title ?? '').trim() || examTitle;
+
   return {
-    courseCode: String(course?.code ?? '').toUpperCase() || 'COURSE',
-    courseTitle: course?.title ?? exam.title,
+    courseCode,
+    courseTitle,
     examId: exam.id,
-    examTitle: exam.title || course?.title || 'Exam Session',
+    examTitle,
     hasSubmitted,
     monitoringMode: exam.monitoring_mode,
     questions: mappedQuestions,
@@ -394,13 +413,23 @@ export async function fetchStudentExamResult(examIdInput?: string): Promise<Stud
     throw new Error('No submitted exam result was found yet.');
   }
 
+  const courseCode = ensureExamField(
+    String(row.course_code ?? '').toUpperCase(),
+    'This result is missing a course code. Contact your invigilator.'
+  );
+  const examTitle = ensureExamField(
+    String(row.exam_title ?? ''),
+    'This result is missing an exam title. Contact your invigilator.'
+  );
+  const courseTitle = String(row.course_title ?? '').trim() || examTitle;
+
   return {
     attemptId: row.attempt_id,
     correctAnswers: toNumber(row.correct_answers),
-    courseCode: String(row.course_code ?? '').toUpperCase() || 'COURSE',
-    courseTitle: row.course_title ?? row.exam_title,
+    courseCode,
+    courseTitle,
     examId: row.exam_id,
-    examTitle: row.exam_title || row.course_title || 'Exam Session',
+    examTitle,
     remark: row.remark || 'No remark available.',
     scorePercent: toNumber(row.score_percent),
     submittedAt: row.submitted_at,

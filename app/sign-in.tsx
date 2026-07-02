@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { layout, palette } from '@/constants/design';
+import { layout, palette, type } from '@/constants/design';
 import { signInStudent } from '@/lib/student-auth';
 
 export default function SignInScreen() {
@@ -46,31 +46,27 @@ export default function SignInScreen() {
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <View style={styles.topRow}>
             <Pressable onPress={() => router.back()} style={styles.backButton}>
-              <Feather color={palette.mutedStrong} name="chevron-left" size={19} />
+              <Feather color={palette.mutedStrong} name="chevron-left" size={18} />
             </Pressable>
+            <View style={styles.topDivider} />
             <Text style={styles.topLabel}>KNUST STUDENT AUTH</Text>
           </View>
 
-          <View style={styles.heroCard}>
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>CHE-TECT</Text>
-            </View>
-            <Text style={styles.title}>Welcome Back</Text>
-            <Text style={styles.subtitle}>Secure login for KNUST exam monitoring</Text>
-
-            <View style={styles.authIconBox}>
-              <MaterialCommunityIcons color="#0c7668" name="shield-check-outline" size={24} />
-            </View>
+          <View style={styles.authIconBox}>
+            <MaterialCommunityIcons color={palette.teal} name="account-school-outline" size={22} />
           </View>
 
-          <View style={styles.formCard}>
-            <Text style={styles.fieldLabel}>STUDENT ID OR USERNAME</Text>
+          <Text style={styles.title}>Student Sign In</Text>
+          <Text style={styles.subtitle}>Secure login for monitored exam sessions</Text>
+
+          <View style={styles.formBlock}>
+            <Text style={styles.fieldLabel}>STUDENT ID</Text>
             <TextInput
               autoCapitalize="none"
               autoCorrect={false}
               onChangeText={setStudentId}
               placeholder="Student ID or username"
-              placeholderTextColor="#94a3b8"
+              placeholderTextColor="#547099"
               style={styles.input}
               value={studentId}
             />
@@ -82,44 +78,51 @@ export default function SignInScreen() {
                 autoCorrect={false}
                 onChangeText={setPassword}
                 placeholder="Password"
-                placeholderTextColor="#94a3b8"
+                placeholderTextColor="#547099"
                 secureTextEntry={!showPassword}
                 style={styles.passwordInput}
                 value={password}
               />
               <Pressable hitSlop={10} onPress={() => setShowPassword((value) => !value)}>
-                <Feather color="#64748b" name={showPassword ? 'eye-off' : 'eye'} size={18} />
+                <Feather color={palette.muted} name={showPassword ? 'eye-off' : 'eye'} size={18} />
               </Pressable>
             </View>
-
-            {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
-
-            <Pressable
-              disabled={isLoading}
-              onPress={handleStudentSignIn}
-              style={({ pressed }) => [
-                styles.primaryButton,
-                (pressed || isLoading) && styles.primaryButtonPressed,
-              ]}>
-              {isLoading ? (
-                <ActivityIndicator color="#ffffff" size="small" />
-              ) : (
-                <Text style={styles.primaryButtonText}>Sign In</Text>
-              )}
-            </Pressable>
           </View>
 
-          <View style={styles.noticeCard}>
-            <View style={styles.noticeDot} />
-            <Text style={styles.noticeCopy}>
-              Your identity is verified against your secured KNUST student profile before access is
-              granted.
-            </Text>
+          {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+
+          <View style={styles.verificationCard}>
+            <View style={styles.verificationLeft}>
+              <MaterialCommunityIcons color={palette.teal} name="shield-check-outline" size={22} />
+              <View>
+                <Text style={styles.verificationTitle}>Identity Verification</Text>
+                <Text style={styles.verificationMeta}>PROFILE + SESSION CHECK</Text>
+              </View>
+            </View>
+            <View style={styles.verificationDot} />
           </View>
+
+          <Pressable
+            disabled={isLoading}
+            onPress={handleStudentSignIn}
+            style={({ pressed }) => [styles.primaryButton, (pressed || isLoading) && styles.primaryButtonPressed]}>
+            {isLoading ? (
+              <ActivityIndicator color="#03221a" size="small" />
+            ) : (
+              <Text style={styles.primaryButtonText}>Authenticate</Text>
+            )}
+          </Pressable>
 
           <Text style={styles.supportCopy}>
             Need help? <Text style={styles.supportAccent}>Contact KNUST IT Support</Text>
           </Text>
+
+          <View style={styles.footerSpacer} />
+
+          <View style={styles.securityBar}>
+            <Text style={styles.securityLabel}>ACCESS LEVEL</Text>
+            <Text style={styles.securityText}>STUDENT - L1</Text>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -129,134 +132,76 @@ export default function SignInScreen() {
 const styles = StyleSheet.create({
   authIconBox: {
     alignItems: 'center',
-    backgroundColor: '#eef9f7',
-    borderColor: '#bde7de',
-    borderRadius: 16,
+    borderColor: palette.teal,
     borderWidth: 1,
-    height: 46,
+    height: 40,
     justifyContent: 'center',
-    marginTop: 14,
-    width: 46,
+    marginTop: 22,
+    width: 40,
   },
   backButton: {
     alignItems: 'center',
-    backgroundColor: palette.panel,
     borderColor: palette.border,
-    borderRadius: 10,
     borderWidth: 1,
-    height: 34,
+    height: 30,
     justifyContent: 'center',
-    width: 34,
-  },
-  badge: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#ecfeff',
-    borderColor: '#bae6fd',
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  badgeText: {
-    color: '#0f766e',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.9,
+    width: 30,
   },
   content: {
     alignSelf: 'center',
     flexGrow: 1,
     maxWidth: layout.maxWidth,
-    paddingBottom: 18,
+    paddingBottom: 12,
     paddingHorizontal: layout.screenPadding,
     width: '100%',
   },
   errorText: {
-    color: '#dc2626',
-    fontSize: 13,
-    marginTop: 12,
+    color: '#ff8f8f',
+    fontSize: type.body,
+    marginTop: 16,
   },
   fieldLabel: {
-    color: '#475569',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1.2,
+    color: palette.mutedStrong,
+    fontSize: type.label,
+    letterSpacing: 1.9,
     marginBottom: 8,
-    marginTop: 16,
   },
-  formCard: {
-    backgroundColor: '#ffffff',
-    borderColor: '#dbe4ef',
-    borderRadius: 18,
-    borderWidth: 1,
-    marginTop: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 18,
+  footerSpacer: {
+    flex: 1,
+    minHeight: layout.footerSpacer + 12,
   },
-  heroCard: {
-    backgroundColor: '#ffffff',
-    borderColor: '#dbe4ef',
-    borderRadius: 18,
-    borderWidth: 1,
-    marginTop: 18,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
+  formBlock: {
+    gap: 14,
+    marginTop: 26,
   },
   input: {
-    backgroundColor: '#f8fafc',
-    borderColor: '#dbe4ef',
-    borderRadius: 12,
+    backgroundColor: palette.panel,
+    borderColor: palette.border,
     borderWidth: 1,
-    color: '#0f172a',
-    fontSize: 15,
+    color: palette.text,
+    fontSize: type.bodyLarge,
     paddingHorizontal: 14,
     paddingVertical: 12,
   },
-  noticeCard: {
-    backgroundColor: '#f0fdf4',
-    borderColor: '#bbf7d0',
-    borderRadius: 14,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-  },
-  noticeCopy: {
-    color: '#166534',
-    flex: 1,
-    fontSize: 13,
-    lineHeight: 19,
-  },
-  noticeDot: {
-    backgroundColor: '#22c55e',
-    borderRadius: 99,
-    height: 6,
-    marginTop: 6,
-    width: 6,
-  },
   passwordField: {
     alignItems: 'center',
-    backgroundColor: '#f8fafc',
-    borderColor: '#dbe4ef',
-    borderRadius: 12,
+    backgroundColor: palette.panel,
+    borderColor: palette.border,
     borderWidth: 1,
     flexDirection: 'row',
     gap: 8,
     paddingHorizontal: 14,
   },
   passwordInput: {
-    color: '#0f172a',
+    color: palette.text,
     flex: 1,
-    fontSize: 15,
+    fontSize: type.bodyLarge,
     paddingVertical: 12,
   },
   primaryButton: {
     alignItems: 'center',
-    backgroundColor: '#0f766e',
-    borderRadius: 12,
-    marginTop: 18,
+    backgroundColor: '#17c9a4',
+    marginTop: 24,
     minHeight: 48,
     justifyContent: 'center',
   },
@@ -264,46 +209,103 @@ const styles = StyleSheet.create({
     opacity: 0.92,
   },
   primaryButtonText: {
-    color: '#ffffff',
-    fontSize: 15,
+    color: '#03221a',
+    fontSize: type.bodyLarge,
     fontWeight: '800',
-    letterSpacing: 0.3,
   },
   safeArea: {
     backgroundColor: palette.background,
     flex: 1,
   },
+  securityBar: {
+    alignItems: 'center',
+    backgroundColor: palette.panel,
+    borderColor: '#0f7a66',
+    borderWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  securityLabel: {
+    color: '#38dfbb',
+    fontSize: type.tiny,
+    letterSpacing: 1.4,
+  },
+  securityText: {
+    color: '#38dfbb',
+    fontSize: type.label,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+  },
   subtitle: {
-    color: '#475569',
-    fontSize: 14,
+    color: '#6f88aa',
+    fontSize: type.subtitle,
     marginTop: 8,
   },
   supportAccent: {
-    color: '#0f766e',
+    color: '#38dfbb',
     fontWeight: '700',
   },
   supportCopy: {
-    color: '#64748b',
-    fontSize: 13,
-    marginTop: 14,
+    color: palette.mutedStrong,
+    fontSize: type.body,
+    marginTop: 16,
     textAlign: 'center',
   },
   title: {
-    color: '#0f172a',
-    fontSize: 24,
+    color: palette.text,
+    fontSize: type.title + 1,
     fontWeight: '800',
-    marginTop: 12,
+    marginTop: 22,
+  },
+  topDivider: {
+    backgroundColor: palette.border,
+    height: 20,
+    width: 1,
   },
   topLabel: {
     color: palette.mutedStrong,
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1.4,
+    fontSize: type.label,
+    letterSpacing: 2,
   },
   topRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 10,
+    gap: 12,
+  },
+  verificationCard: {
+    alignItems: 'center',
+    backgroundColor: palette.panel,
+    borderColor: palette.border,
+    borderWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 22,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  verificationDot: {
+    backgroundColor: palette.success,
+    borderRadius: 99,
+    height: 6,
+    width: 6,
+  },
+  verificationLeft: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+  },
+  verificationMeta: {
+    color: palette.mutedStrong,
+    fontSize: type.tiny,
+    letterSpacing: 1.4,
+    marginTop: 4,
+  },
+  verificationTitle: {
+    color: palette.text,
+    fontSize: 17,
+    fontWeight: '700',
   },
 });
 

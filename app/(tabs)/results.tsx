@@ -80,6 +80,20 @@ export default function ResultsScreen() {
     () => getPerformanceLabel(resultData?.scorePercent ?? 0),
     [resultData?.scorePercent]
   );
+  const normalizedExamTitle = String(resultData?.examTitle ?? '').trim();
+  const normalizedCourseCode = String(resultData?.courseCode ?? '')
+    .trim()
+    .toUpperCase();
+  const submittedMeta =
+    resultData?.submittedAt && String(resultData.submittedAt).trim()
+      ? formatSubmittedAt(resultData.submittedAt)
+      : isLoading
+      ? 'Loading submission time...'
+      : 'Submission time unavailable';
+  const headerTitle = normalizedExamTitle || (isLoading ? 'Loading result...' : 'Result unavailable');
+  const headerMeta = normalizedCourseCode
+    ? `${normalizedCourseCode} - ${submittedMeta}`
+    : submittedMeta;
 
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
@@ -87,10 +101,8 @@ export default function ResultsScreen() {
         <View style={styles.heroCard}>
           <View>
             <Text style={styles.eyebrow}>POST-EXAM RESULT</Text>
-            <Text style={styles.title}>{resultData?.examTitle ?? 'Exam Result'}</Text>
-            <Text style={styles.meta}>
-              {(resultData?.courseCode ?? 'COURSE') + ' - ' + formatSubmittedAt(resultData?.submittedAt ?? '')}
-            </Text>
+            <Text style={styles.title}>{headerTitle}</Text>
+            <Text style={styles.meta}>{headerMeta}</Text>
           </View>
           <View style={styles.badge}>
             <Text style={styles.badgeText}>SUBMITTED</Text>

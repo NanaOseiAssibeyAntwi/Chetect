@@ -205,6 +205,7 @@ export type InvigilatorSuspiciousClipSegment = {
 };
 
 export type InvigilatorSuspiciousEvent = {
+  alertDurationSeconds: number;
   createdAt: string;
   endTimestampSeconds: number;
   id: string;
@@ -212,6 +213,8 @@ export type InvigilatorSuspiciousEvent = {
   maxScore: number;
   reason: string;
   riskLevel: MonitorRiskLevel;
+  severity: string | null;
+  signalCode: string | null;
   requestedLeadSeconds: number;
   requestedTrailSeconds: number;
   segments: InvigilatorSuspiciousClipSegment[];
@@ -237,6 +240,7 @@ export type InvigilatorMonitorStudent = {
   isCritical: boolean;
   isDone: boolean;
   isFlagged: boolean;
+  latestObservation: string;
   name: string;
   riskLevel: MonitorRiskLevel;
   score: number;
@@ -575,15 +579,16 @@ function deriveMonitorRiskLevel(
   suspiciousEventCount: number,
   finalLabel: AnalysisLabel | null
 ): MonitorRiskLevel {
+  void finalLabel;
   if (maxScore >= 90 || suspiciousEventCount >= 4) {
     return 'critical';
   }
 
-  if (maxScore >= 75 || finalLabel === 'SUSPICIOUS' || suspiciousEventCount >= 2) {
+  if (maxScore >= 75 || suspiciousEventCount >= 2) {
     return 'high';
   }
 
-  if (maxScore >= 45 || finalLabel === 'CAUTION' || suspiciousEventCount >= 1) {
+  if (maxScore >= 45 || suspiciousEventCount >= 1) {
     return 'medium';
   }
 
@@ -593,29 +598,31 @@ function deriveMonitorRiskLevel(
 function deriveMonitorIndicators({
   finalLabel,
   latestObservation,
-  riskLevel,
 }: {
   finalLabel: AnalysisLabel | null;
   latestObservation: string;
-  riskLevel: MonitorRiskLevel;
 }) {
   const observation = latestObservation.trim().toLowerCase();
-  const gazeHint = /gaze|eye|off-screen|screen/.test(observation);
-  const faceHint = /face|identity|camera/.test(observation);
+  const hasObservation = observation.length > 0;
+  const gazeHint =
+    /gaze|eye|blink|looking|look away|sideways|off-screen|screen|left|right|up|down|head yaw|head pitch|head roll/.test(
+      observation
+    );
+  const faceHint = /face|identity|camera|not detected|no face/.test(observation);
   const audioHint = /audio|noise|sound|voice/.test(observation);
-  const multiFaceHint = /multi|multiple|second face|two faces|person/.test(observation);
-
-  const isCritical = riskLevel === 'critical';
-  const isHigh = riskLevel === 'high';
+  const multiFaceHint =
+    /multi[-\s]?face|multiple|second face|two faces|another person|extra person/.test(observation);
 
   return {
-    audio: audioHint || isCritical ? 'alert' : 'ok',
+    audio: audioHint ? 'alert' : 'ok',
     face:
-      finalLabel === 'NO_FACE' || finalLabel === 'SUSPICIOUS' || faceHint || isCritical
+      finalLabel === 'NO_FACE' ||
+      faceHint ||
+      (!hasObservation && finalLabel === 'SUSPICIOUS')
         ? 'alert'
         : 'ok',
-    gaze: gazeHint || isHigh || isCritical ? 'alert' : 'ok',
-    multiFace: multiFaceHint || finalLabel === 'SUSPICIOUS' || isCritical ? 'alert' : 'ok',
+    gaze: gazeHint || (!hasObservation && finalLabel === 'SUSPICIOUS') ? 'alert' : 'ok',
+    multiFace: multiFaceHint ? 'alert' : 'ok',
   } as const;
 }
 
@@ -927,6 +934,7 @@ export async function fetchInvigilatorMonitorData(
     const score = toNumber(latestSession?.max_score);
     const suspiciousEventCount = toNumber(latestSession?.suspicious_event_count);
     const finalLabel = latestSession?.final_label ?? null;
+    const latestObservation = String(latestSession?.latest_observation ?? '').trim();
     const riskLevel = deriveMonitorRiskLevel(score, suspiciousEventCount, finalLabel);
     const institutionalId =
       String(profile?.institutional_id ?? '')
@@ -945,15 +953,15 @@ export async function fetchInvigilatorMonitorData(
     return {
       indicators: deriveMonitorIndicators({
         finalLabel,
-        latestObservation: latestSession?.latest_observation ?? '',
-        riskLevel,
+        latestObservation,
       }),
       initials: toStudentInitials(fullName),
       institutionalId,
       isActive,
       isCritical: riskLevel === 'critical',
       isDone,
-      isFlagged: riskLevel !== 'low',
+      isFlagged: suspiciousEventCount > 0 || score >= 75,
+      latestObservation,
       name: fullName,
       riskLevel,
       score,
@@ -1057,9 +1065,12 @@ export async function fetchInvigilatorSuspiciousEvents(
       const requestedLeadSeconds = Math.max(0, toNumber(evidence?.requestedLeadSeconds));
       const requestedTrailSeconds = Math.max(0, toNumber(evidence?.requestedTrailSeconds));
       const eventDurationSeconds = Math.max(
-        0.25,
-        toNumber(eventRow.end_timestamp_seconds) - toNumber(eventRow.start_timestamp_seconds)
+        0,
+        toNumber(evidence?.ai.eventDurationSeconds) ||
+          (toNumber(eventRow.end_timestamp_seconds) - toNumber(eventRow.start_timestamp_seconds))
       );
+      const eventSeverity = String(evidence?.ai.severity ?? '').trim().toLowerCase() || null;
+      const eventSignalCode = String(evidence?.ai.signalCode ?? '').trim() || null;
       const windowStartMs = toTimestampMs(evidence?.windowStartIso ?? null);
       const eventStartMs =
         windowStartMs === null ? null : windowStartMs + requestedLeadSeconds * 1000;
@@ -1150,6 +1161,7 @@ export async function fetchInvigilatorSuspiciousEvents(
       const studentName = String(profile?.full_name ?? '').trim() || `Student ${institutionalId}`;
 
       return {
+        alertDurationSeconds: eventDurationSeconds,
         createdAt: eventRow.created_at,
         endTimestampSeconds: toNumber(eventRow.end_timestamp_seconds),
         id: eventRow.id,
@@ -1157,6 +1169,8 @@ export async function fetchInvigilatorSuspiciousEvents(
         maxScore: toNumber(eventRow.max_score),
         reason: eventRow.reason,
         riskLevel: normalizeMonitorRiskLevel(String(eventRow.risk_level ?? 'medium')),
+        severity: eventSeverity,
+        signalCode: eventSignalCode,
         requestedLeadSeconds,
         requestedTrailSeconds,
         segments,
