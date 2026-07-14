@@ -4,7 +4,7 @@ import { ComponentProps } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { layout, palette, type } from '@/constants/design';
+import { layout, palette, radius, shadow, type } from '@/constants/design';
 
 type ProfileIconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
 
@@ -98,7 +98,7 @@ export default function ProfileScreen() {
         <View style={styles.footerSpacer} />
 
         <Pressable onPress={() => router.replace('/sign-in')} style={styles.signOutButton}>
-          <Feather color="#ff3d4f" name="log-out" size={15} />
+          <Feather color={palette.danger} name="log-out" size={15} />
           <Text style={styles.signOutText}>Sign Out</Text>
         </Pressable>
       </ScrollView>
@@ -109,8 +109,8 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   avatarBox: {
     alignItems: 'center',
-    borderColor: palette.teal,
-    borderWidth: 1,
+    backgroundColor: palette.tealSoft,
+    borderRadius: radius.pill,
     height: 48,
     justifyContent: 'center',
     width: 48,
@@ -122,7 +122,9 @@ const styles = StyleSheet.create({
   },
   backButton: {
     alignItems: 'center',
-    borderColor: palette.teal,
+    backgroundColor: palette.panel,
+    borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     height: 28,
     justifyContent: 'center',
@@ -139,7 +141,9 @@ const styles = StyleSheet.create({
   eyebrow: {
     color: palette.mutedStrong,
     fontSize: type.label,
-    letterSpacing: 2.2,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
   },
   footerSpacer: {
     flex: 1,
@@ -159,12 +163,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: palette.panel,
     borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: 'row',
     gap: 14,
     marginTop: 18,
     paddingHorizontal: 16,
     paddingVertical: 16,
+    ...shadow.card,
   },
   heroText: {
     flex: 1,
@@ -218,11 +224,15 @@ const styles = StyleSheet.create({
   sectionLabel: {
     color: palette.mutedStrong,
     fontSize: type.label,
-    letterSpacing: 2.2,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
   },
   signOutButton: {
     alignItems: 'center',
-    borderColor: '#64131e',
+    backgroundColor: palette.dangerSoft,
+    borderColor: '#fecaca',
+    borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: 'row',
     gap: 10,
@@ -230,24 +240,27 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   signOutText: {
-    color: '#ff3d4f',
+    color: palette.danger,
     fontSize: type.bodyLarge,
     fontWeight: '700',
   },
   statCard: {
     backgroundColor: palette.panel,
     borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     flex: 1,
     gap: 8,
     minHeight: 68,
     paddingHorizontal: 12,
     paddingVertical: 11,
+    ...shadow.card,
   },
   statLabel: {
     color: palette.mutedStrong,
     fontSize: type.tiny,
-    letterSpacing: 1.2,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
   },
   statValue: {
     color: palette.teal,

@@ -3,12 +3,12 @@ import { router } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { layout, palette, type } from '@/constants/design';
+import { layout, palette, radius, shadow, type } from '@/constants/design';
 
 const roles = [
   {
     accent: palette.teal,
-    description: 'JOIN EXAM SESSION',
+    description: 'Join a scheduled exam session',
     href: '/sign-in' as const,
     icon: <Feather color={palette.teal} name="user" size={20} />,
     title: 'Student',
@@ -16,7 +16,7 @@ const roles = [
   {
     accent: palette.warning,
     href: '/invigilator-sign-in' as const,
-    description: 'MONITOR SESSIONS',
+    description: 'Create and monitor exam sessions',
     icon: <MaterialCommunityIcons color={palette.warning} name="lock-outline" size={20} />,
     title: 'Invigilator',
   },
@@ -26,36 +26,29 @@ export default function LandingScreen() {
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.badge}>
-          <View style={styles.badgeDot} />
-          <Text style={styles.badgeText}>SYSTEM ONLINE</Text>
-        </View>
-
         <View style={styles.heroBlock}>
-          <Text style={styles.heroLine}>Academic</Text>
-          <Text style={[styles.heroLine, styles.heroAccent]}>Integrity</Text>
-          <Text style={styles.heroLine}>Enforced.</Text>
+          <View style={styles.brandDot} />
+          <Text style={styles.heroLine}>Chetect</Text>
           <Text style={styles.heroCopy}>
-            AI-powered exam proctoring for KNUST. Real-time monitoring, zero compromise.
+            Minimal exam access for KNUST students and invigilators.
           </Text>
         </View>
 
-        <View style={styles.divider} />
-
-        <Text style={styles.sectionLabel}>SELECT YOUR ROLE</Text>
+        <Text style={styles.sectionLabel}>Continue as</Text>
 
         <View style={styles.roleList}>
           {roles.map((role) => (
             <Pressable
               key={role.title}
-              android_ripple={{ color: '#102447' }}
+              android_ripple={{ color: palette.borderSoft }}
               onPress={() => router.push(role.href)}
               style={({ pressed }) => [
                 styles.roleCard,
-                { borderColor: `${role.accent}35` },
                 pressed && styles.roleCardPressed,
               ]}>
-              <View style={[styles.roleIconBox, { borderColor: role.accent }]}>{role.icon}</View>
+              <View style={[styles.roleIconBox, { backgroundColor: role.title === 'Student' ? palette.tealSoft : palette.warningSoft }]}>
+                {role.icon}
+              </View>
               <View style={styles.roleTextBlock}>
                 <Text style={styles.roleTitle}>{role.title}</Text>
                 <Text style={styles.roleDescription}>{role.description}</Text>
@@ -70,73 +63,51 @@ export default function LandingScreen() {
 }
 
 const styles = StyleSheet.create({
-  badge: {
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    backgroundColor: '#041120',
-    borderColor: '#17476d',
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  badgeDot: {
+  brandDot: {
     backgroundColor: palette.teal,
-    borderRadius: 99,
-    height: 6,
-    width: 6,
-  },
-  badgeText: {
-    color: '#8fe8ff',
-    fontSize: type.tiny,
-    fontWeight: '700',
-    letterSpacing: 1.8,
+    borderRadius: radius.pill,
+    height: 8,
+    marginBottom: 18,
+    width: 8,
   },
   content: {
     alignSelf: 'center',
     flexGrow: 1,
+    justifyContent: 'center',
     maxWidth: layout.maxWidth,
     paddingBottom: layout.bottomPadding + 6,
     paddingHorizontal: layout.screenPadding,
     paddingTop: 4,
     width: '100%',
   },
-  divider: {
-    backgroundColor: palette.border,
-    height: 1,
-    marginBottom: 24,
-    marginTop: layout.heroTop - 4,
-    width: '100%',
-  },
-  heroAccent: {
-    color: palette.teal,
-  },
   heroBlock: {
-    marginTop: layout.heroTop,
+    marginBottom: 38,
   },
   heroCopy: {
     color: palette.mutedStrong,
     fontSize: type.bodyLarge,
     lineHeight: 24,
-    marginTop: 18,
+    marginTop: 12,
     maxWidth: 312,
   },
   heroLine: {
     color: palette.text,
     fontSize: type.hero,
     fontWeight: '800',
-    letterSpacing: -1.5,
+    letterSpacing: 0,
     lineHeight: type.hero + 7,
   },
   roleCard: {
     alignItems: 'center',
     backgroundColor: palette.panel,
+    borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: 'row',
     gap: 14,
     minHeight: 78,
     paddingHorizontal: 16,
+    ...shadow.card,
   },
   roleCardPressed: {
     opacity: 0.92,
@@ -144,15 +115,14 @@ const styles = StyleSheet.create({
   },
   roleDescription: {
     color: palette.mutedStrong,
-    fontSize: type.label,
-    letterSpacing: 1.4,
+    fontSize: type.body,
   },
   roleIconBox: {
     alignItems: 'center',
-    borderWidth: 1,
-    height: 32,
+    borderRadius: radius.md,
+    height: 38,
     justifyContent: 'center',
-    width: 32,
+    width: 38,
   },
   roleList: {
     gap: layout.cardGap,
@@ -172,8 +142,8 @@ const styles = StyleSheet.create({
   },
   sectionLabel: {
     color: palette.mutedStrong,
-    fontSize: type.label,
-    letterSpacing: 2.1,
+    fontSize: type.body,
+    fontWeight: '700',
     marginBottom: 14,
   },
 });

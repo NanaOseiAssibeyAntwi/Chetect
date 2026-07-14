@@ -1,4 +1,4 @@
-import { Dimensions, PixelRatio } from 'react-native';
+import { Dimensions, PixelRatio, Platform } from 'react-native';
 
 const { height, width } = Dimensions.get('window');
 const shortEdge = Math.min(width, height);
@@ -13,34 +13,79 @@ const normalize = (size: number, factor = uiScale) =>
   Math.round(PixelRatio.roundToNearestPixel(size * factor));
 
 export const palette = {
-  background: '#030712',
-  backgroundAlt: '#07111f',
-  panel: '#091427',
-  panelSoft: '#0c1930',
-  panelRaised: '#101d32',
-  border: '#17305a',
-  borderSoft: '#12304b',
-  text: '#f3f6fb',
-  muted: '#7890b2',
-  mutedStrong: '#9fb4d4',
-  teal: '#2de4d8',
-  tealSoft: '#0f4b52',
-  tealGlow: '#1bcad5',
-  warning: '#f1bf21',
-  warningSoft: '#342911',
-  danger: '#ff4d6d',
-  success: '#28ef8d',
+  background: '#f6f7f9',
+  backgroundAlt: '#eef2f6',
+  panel: '#ffffff',
+  panelSoft: '#f9fafb',
+  panelRaised: '#ffffff',
+  surfaceGlassDark: '#ffffff',
+  surfaceGlassStrong: '#ffffff',
+  border: '#e3e8ef',
+  borderSoft: '#eef2f6',
+  borderStrong: '#cdd5df',
+  text: '#101828',
+  muted: '#667085',
+  mutedStrong: '#475467',
+  teal: '#2563eb',
+  tealSoft: '#eff6ff',
+  tealGlow: '#93c5fd',
+  sky: '#0ea5e9',
+  warning: '#b45309',
+  warningSoft: '#fff7ed',
+  danger: '#dc2626',
+  dangerSoft: '#fef2f2',
+  success: '#15803d',
+  successSoft: '#f0fdf4',
+};
+
+export const font = {
+  body: Platform.select({
+    android: 'sans',
+    default: undefined,
+    ios: 'System',
+    web: 'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+  }),
+  display: Platform.select({
+    android: 'sans',
+    default: undefined,
+    ios: 'System',
+    web: 'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+  }),
+  mono: Platform.select({
+    android: 'monospace',
+    default: undefined,
+    ios: 'Menlo',
+    web: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
+  }),
+};
+
+export const radius = {
+  xs: 4,
+  sm: 6,
+  md: 8,
+  lg: 8,
+  pill: 999,
+};
+
+export const shadow = {
+  card: {
+    elevation: 1,
+    shadowColor: '#101828',
+    shadowOffset: { height: 1, width: 0 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+  },
 };
 
 export const layout = {
-  bottomPadding: normalize(26, heightScale),
+  bottomPadding: normalize(28, heightScale),
   cardGap: normalize(10),
-  footerSpacer: normalize(shortEdge < 360 ? 104 : 128, heightScale),
-  heroTop: normalize(shortEdge < 360 ? 30 : 36, heightScale),
-  maxWidth: shortEdge >= 768 ? 560 : 480,
-  screenPadding: normalize(shortEdge < 360 ? 14 : 16),
-  screenPaddingWide: normalize(shortEdge < 360 ? 12 : 14),
-  sectionGap: normalize(18, heightScale),
+  footerSpacer: normalize(shortEdge < 360 ? 88 : 104, heightScale),
+  heroTop: normalize(shortEdge < 360 ? 26 : 34, heightScale),
+  maxWidth: shortEdge >= 768 ? 600 : 500,
+  screenPadding: normalize(shortEdge < 360 ? 16 : 20),
+  screenPaddingWide: normalize(shortEdge < 360 ? 16 : 18),
+  sectionGap: normalize(20, heightScale),
   tabBarHeight: normalize(shortEdge < 360 ? 62 : 66, heightScale),
   tabBarPaddingBottom: normalize(8, heightScale),
   tabBarPaddingTop: normalize(6, heightScale),
@@ -49,8 +94,8 @@ export const layout = {
 export const type = {
   body: normalize(13),
   bodyLarge: normalize(15),
-  display: normalize(26),
-  hero: normalize(shortEdge < 360 ? 42 : 48),
+  display: normalize(25),
+  hero: normalize(shortEdge < 360 ? 36 : 42),
   label: normalize(10),
   subtitle: normalize(15),
   tiny: normalize(9),

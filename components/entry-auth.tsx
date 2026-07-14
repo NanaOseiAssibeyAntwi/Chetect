@@ -161,15 +161,15 @@ const styles = StyleSheet.create({
   },
   fieldLabel: {
     color: palette.mutedStrong,
-    fontFamily: font.mono,
+    fontFamily: font.body,
     fontSize: type.tiny,
     fontWeight: '800',
-    letterSpacing: 1.8,
+    letterSpacing: 0.4,
     textTransform: 'uppercase',
   },
   fieldShell: {
     alignItems: 'center',
-    backgroundColor: 'rgba(3, 9, 18, 0.82)',
+    backgroundColor: palette.panel,
     borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: 'row',
@@ -182,10 +182,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   headerLabel: {
-    fontFamily: font.mono,
+    fontFamily: font.body,
     fontSize: type.label,
     fontWeight: '800',
-    letterSpacing: 2.2,
+    letterSpacing: 0.6,
     textTransform: 'uppercase',
   },
   headerRow: {
@@ -209,6 +209,6 @@ const styles = StyleSheet.create({
     fontFamily: font.body,
     fontSize: type.bodyLarge,
     fontWeight: '900',
-    letterSpacing: 0.2,
+    letterSpacing: 0,
   },
 });

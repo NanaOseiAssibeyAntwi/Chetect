@@ -1,4 +1,4 @@
-import { DarkTheme, ThemeProvider } from '@react-navigation/native';
+import { DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
@@ -6,9 +6,9 @@ import 'react-native-reanimated';
 import { palette } from '@/constants/design';
 
 const navigationTheme = {
-  ...DarkTheme,
+  ...DefaultTheme,
   colors: {
-    ...DarkTheme.colors,
+    ...DefaultTheme.colors,
     background: palette.background,
     border: palette.border,
     card: palette.panel,
@@ -29,7 +29,7 @@ export default function RootLayout() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="(invigilator-tabs)" />
       </Stack>
-      <StatusBar style="light" backgroundColor={palette.background} />
+      <StatusBar style="dark" backgroundColor={palette.background} />
     </ThemeProvider>
   );
 }

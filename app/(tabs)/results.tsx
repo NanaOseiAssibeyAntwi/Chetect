@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { layout, palette, type } from '@/constants/design';
+import { layout, palette, radius, shadow, type } from '@/constants/design';
 import { fetchStudentExamResult, type StudentExamResultData } from '@/lib/student-exam';
 
 function formatSubmittedAt(isoDate: string) {
@@ -156,7 +156,9 @@ export default function ResultsScreen() {
 const styles = StyleSheet.create({
   badge: {
     alignItems: 'center',
-    borderColor: '#107f5f',
+    backgroundColor: palette.successSoft,
+    borderColor: '#bbf7d0',
+    borderRadius: radius.sm,
     borderWidth: 1,
     justifyContent: 'center',
     minHeight: 44,
@@ -179,37 +181,43 @@ const styles = StyleSheet.create({
   eyebrow: {
     color: palette.mutedStrong,
     fontSize: type.label,
-    letterSpacing: 2.2,
+    fontWeight: '700',
+    letterSpacing: 0.5,
     marginTop: 2,
+    textTransform: 'uppercase',
   },
   errorCard: {
     alignItems: 'flex-start',
-    backgroundColor: '#2f1116',
-    borderColor: '#8f2d37',
+    backgroundColor: palette.dangerSoft,
+    borderColor: '#fecaca',
+    borderRadius: radius.md,
     borderWidth: 1,
     marginTop: 12,
     paddingHorizontal: 12,
     paddingVertical: 12,
   },
   errorText: {
-    color: '#ff9ea8',
+    color: palette.danger,
     fontSize: type.body,
   },
   heroCard: {
     alignItems: 'flex-start',
     backgroundColor: palette.panel,
     borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 20,
     paddingHorizontal: 14,
     paddingVertical: 16,
+    ...shadow.card,
   },
   loadingCard: {
     alignItems: 'center',
     backgroundColor: palette.panel,
     borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: 'row',
     gap: 8,
@@ -228,6 +236,7 @@ const styles = StyleSheet.create({
   remarkCard: {
     backgroundColor: palette.panel,
     borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     marginTop: 12,
     paddingHorizontal: 14,
@@ -245,14 +254,15 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   retryButton: {
-    borderColor: '#b34954',
+    borderColor: '#fecaca',
+    borderRadius: radius.sm,
     borderWidth: 1,
     marginTop: 10,
     paddingHorizontal: 10,
     paddingVertical: 8,
   },
   retryButtonText: {
-    color: '#ff9ea8',
+    color: palette.danger,
     fontSize: type.body,
     fontWeight: '700',
   },
@@ -264,6 +274,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: palette.panel,
     borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     marginTop: 16,
     paddingHorizontal: 14,
@@ -288,6 +299,7 @@ const styles = StyleSheet.create({
   secondaryButton: {
     alignItems: 'center',
     borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: 'row',
     gap: 10,
@@ -307,7 +319,9 @@ const styles = StyleSheet.create({
   sectionLabel: {
     color: palette.mutedStrong,
     fontSize: type.label,
-    letterSpacing: 2,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
   },
   title: {
     color: palette.text,

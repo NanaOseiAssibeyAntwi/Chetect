@@ -2,12 +2,12 @@ import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { layout, palette, type } from '@/constants/design';
+import { layout, palette, radius, shadow, type } from '@/constants/design';
 
 const summary = [
   { label: 'SESSIONS', value: '12', valueColor: palette.warning },
   { label: 'AVG TRUST', value: '91', valueColor: palette.success },
-  { label: 'FLAGS', value: '23', valueColor: '#ff6a6a' },
+  { label: 'FLAGS', value: '23', valueColor: palette.danger },
 ] as const;
 
 const reports = [
@@ -59,7 +59,7 @@ export default function InvigilatorReportsScreen() {
             <Text style={styles.exportCopy}>Generate CSV and PDF exports for audit review.</Text>
           </View>
           <View style={styles.exportButton}>
-            <Feather color="#1b1200" name="download" size={15} />
+            <Feather color="#ffffff" name="download" size={15} />
             <Text style={styles.exportButtonText}>Export</Text>
           </View>
         </View>
@@ -102,7 +102,8 @@ const styles = StyleSheet.create({
   },
   exportButton: {
     alignItems: 'center',
-    backgroundColor: '#d7a413',
+    backgroundColor: palette.teal,
+    borderRadius: radius.sm,
     flexDirection: 'row',
     gap: 8,
     justifyContent: 'center',
@@ -111,7 +112,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   exportButtonText: {
-    color: '#1b1200',
+    color: '#ffffff',
     fontSize: type.body,
     fontWeight: '800',
   },
@@ -119,12 +120,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: palette.panel,
     borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginTop: 20,
     paddingHorizontal: 16,
     paddingVertical: 16,
+    ...shadow.card,
   },
   exportCopy: {
     color: palette.mutedStrong,
@@ -139,8 +142,10 @@ const styles = StyleSheet.create({
   eyebrow: {
     color: palette.mutedStrong,
     fontSize: type.label,
-    letterSpacing: 2.2,
+    fontWeight: '700',
+    letterSpacing: 0.5,
     marginTop: 4,
+    textTransform: 'uppercase',
   },
   flagsText: {
     color: palette.warning,
@@ -159,9 +164,11 @@ const styles = StyleSheet.create({
   reportCard: {
     backgroundColor: palette.panel,
     borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     paddingHorizontal: 16,
     paddingVertical: 16,
+    ...shadow.card,
   },
   reportCourse: {
     color: palette.text,
@@ -194,7 +201,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   statusBadge: {
-    borderColor: '#6c5211',
+    backgroundColor: palette.warningSoft,
+    borderColor: '#fed7aa',
+    borderRadius: radius.sm,
     borderWidth: 1,
     paddingHorizontal: 10,
     paddingVertical: 6,
@@ -214,17 +223,20 @@ const styles = StyleSheet.create({
   summaryCard: {
     backgroundColor: palette.panel,
     borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     flex: 1,
     gap: 8,
     minHeight: 68,
     paddingHorizontal: 12,
     paddingVertical: 11,
+    ...shadow.card,
   },
   summaryLabel: {
     color: palette.mutedStrong,
     fontSize: type.tiny,
-    letterSpacing: 1.2,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
   },
   summaryRow: {
     flexDirection: 'row',

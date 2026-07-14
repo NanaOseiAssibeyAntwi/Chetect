@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { layout, palette, type } from '@/constants/design';
+import { layout, palette, radius, shadow, type } from '@/constants/design';
 import {
   createExamSession,
   type CreateExamQuestionInput,
@@ -327,7 +327,7 @@ export default function InvigilatorCreateScreen() {
                   <Pressable
                     onPress={() => removeQuestion(questionIndex)}
                     style={styles.removeQuestionButton}>
-                    <Feather color="#ff8f8f" name="trash-2" size={13} />
+                    <Feather color={palette.danger} name="trash-2" size={13} />
                   </Pressable>
                 </View>
 
@@ -424,7 +424,7 @@ export default function InvigilatorCreateScreen() {
           onPress={handleCreateSession}
           style={[styles.primaryButton, isSaving ? styles.primaryButtonDisabled : null]}>
           {isSaving ? (
-            <ActivityIndicator color="#1a1300" size="small" />
+            <ActivityIndicator color="#ffffff" size="small" />
           ) : (
             <Text style={styles.primaryButtonText}>Create Session</Text>
           )}
@@ -441,7 +441,9 @@ export default function InvigilatorCreateScreen() {
 const styles = StyleSheet.create({
   addQuestionButton: {
     alignItems: 'center',
-    borderColor: '#6c5211',
+    backgroundColor: palette.panel,
+    borderColor: palette.border,
+    borderRadius: radius.sm,
     borderWidth: 1,
     flexDirection: 'row',
     gap: 6,
@@ -449,7 +451,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   addQuestionText: {
-    color: palette.warning,
+    color: palette.text,
     fontSize: type.body,
     fontWeight: '700',
   },
@@ -472,13 +474,14 @@ const styles = StyleSheet.create({
     letterSpacing: 2.2,
   },
   errorText: {
-    color: '#ff8f8f',
+    color: palette.danger,
     fontSize: type.body,
     marginTop: 12,
   },
   correctOptionButton: {
     alignItems: 'center',
     borderColor: palette.border,
+    borderRadius: radius.sm,
     borderWidth: 1,
     height: 42,
     justifyContent: 'center',
@@ -486,8 +489,8 @@ const styles = StyleSheet.create({
     width: 42,
   },
   correctOptionButtonActive: {
-    backgroundColor: '#106c51',
-    borderColor: '#0bba70',
+    backgroundColor: palette.successSoft,
+    borderColor: palette.success,
   },
   correctOptionButtonText: {
     color: palette.mutedStrong,
@@ -495,15 +498,17 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   correctOptionButtonTextActive: {
-    color: palette.text,
+    color: palette.success,
   },
   featureCard: {
     backgroundColor: palette.panel,
     borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     marginTop: 16,
     paddingHorizontal: 14,
     paddingVertical: 16,
+    ...shadow.card,
   },
   featureDot: {
     backgroundColor: palette.success,
@@ -521,7 +526,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   featureText: {
-    color: '#7fd8ff',
+    color: palette.mutedStrong,
     fontSize: type.bodyLarge,
   },
   formGroup: {
@@ -538,8 +543,9 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   input: {
-    backgroundColor: '#050d18',
+    backgroundColor: palette.panel,
     borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     color: palette.text,
     fontSize: type.bodyLarge,
@@ -555,8 +561,9 @@ const styles = StyleSheet.create({
   },
   inputWithIcon: {
     alignItems: 'center',
-    backgroundColor: '#050d18',
+    backgroundColor: palette.panel,
     borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: 'row',
     gap: 10,
@@ -566,12 +573,15 @@ const styles = StyleSheet.create({
   label: {
     color: palette.mutedStrong,
     fontSize: type.label,
-    letterSpacing: 2,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
   },
   modeCard: {
     alignItems: 'flex-start',
     backgroundColor: palette.panel,
     borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: 'row',
     gap: 12,
@@ -579,8 +589,8 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   modeCardActive: {
-    backgroundColor: '#062126',
-    borderColor: '#0d8b86',
+    backgroundColor: palette.tealSoft,
+    borderColor: palette.teal,
   },
   modeDescription: {
     color: palette.mutedStrong,
@@ -589,6 +599,7 @@ const styles = StyleSheet.create({
   },
   modeIndicator: {
     borderColor: palette.border,
+    borderRadius: radius.pill,
     borderWidth: 1,
     height: 14,
     marginTop: 3,
@@ -629,7 +640,8 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     alignItems: 'center',
-    backgroundColor: '#d7a413',
+    backgroundColor: palette.teal,
+    borderRadius: radius.md,
     marginTop: 18,
     paddingVertical: 15,
   },
@@ -637,7 +649,7 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   primaryButtonText: {
-    color: '#1a1300',
+    color: '#ffffff',
     fontSize: type.bodyLarge,
     fontWeight: '800',
   },
@@ -648,10 +660,12 @@ const styles = StyleSheet.create({
   questionCard: {
     backgroundColor: palette.panel,
     borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     marginTop: 10,
     paddingHorizontal: 12,
     paddingVertical: 12,
+    ...shadow.card,
   },
   questionCardHeader: {
     alignItems: 'center',
@@ -677,7 +691,8 @@ const styles = StyleSheet.create({
   },
   removeQuestionButton: {
     alignItems: 'center',
-    borderColor: '#8f2d37',
+    borderColor: '#fecaca',
+    borderRadius: radius.sm,
     borderWidth: 1,
     height: 28,
     justifyContent: 'center',
@@ -686,6 +701,7 @@ const styles = StyleSheet.create({
   secondaryButton: {
     alignItems: 'center',
     borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     marginTop: 10,
     paddingVertical: 14,

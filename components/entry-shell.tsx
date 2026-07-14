@@ -30,21 +30,21 @@ export const entryAccents: Record<
 > = {
   teal: {
     accent: palette.teal,
-    accentContrast: '#03262d',
-    border: 'rgba(45, 228, 216, 0.34)',
-    glow: 'rgba(45, 228, 216, 0.18)',
-    panel: 'rgba(7, 20, 37, 0.82)',
-    soft: 'rgba(11, 52, 58, 0.88)',
-    stripe: 'rgba(45, 228, 216, 0.22)',
+    accentContrast: '#ffffff',
+    border: palette.border,
+    glow: palette.tealSoft,
+    panel: palette.panel,
+    soft: palette.tealSoft,
+    stripe: palette.teal,
   },
   warning: {
     accent: palette.warning,
-    accentContrast: '#221600',
-    border: 'rgba(241, 191, 33, 0.34)',
-    glow: 'rgba(241, 191, 33, 0.16)',
-    panel: 'rgba(14, 18, 28, 0.84)',
-    soft: 'rgba(54, 41, 17, 0.9)',
-    stripe: 'rgba(241, 191, 33, 0.2)',
+    accentContrast: '#ffffff',
+    border: palette.border,
+    glow: palette.warningSoft,
+    panel: palette.panel,
+    soft: palette.warningSoft,
+    stripe: palette.warning,
   },
 };
 
@@ -90,24 +90,7 @@ function EntryBackdrop({ accent }: { accent: EntryAccent }) {
 
   return (
     <View pointerEvents="none" style={styles.backdrop}>
-      <View style={[styles.topGlow, { backgroundColor: tone.glow }]} />
-      <View style={[styles.bottomGlow, { backgroundColor: tone.glow }]} />
-      <View style={[styles.rightGlow, { backgroundColor: tone.glow }]} />
-      <View style={[styles.frame, { borderColor: tone.stripe }]} />
-      <View style={[styles.centerColumn, { borderColor: tone.stripe }]} />
-      <View style={[styles.upperRail, { backgroundColor: tone.stripe }]} />
-      <View style={[styles.midRail, { backgroundColor: tone.stripe }]} />
-      <View style={styles.outerRails}>
-        <View style={styles.outerRail} />
-        <View style={styles.outerRail} />
-      </View>
-      <View style={styles.gridColumns}>
-        <View style={styles.gridColumn} />
-        <View style={styles.gridColumn} />
-        <View style={styles.gridColumn} />
-      </View>
-      <View style={styles.orbitRingLarge} />
-      <View style={styles.orbitRingSmall} />
+      <View style={[styles.headerBand, { backgroundColor: tone.glow }]} />
     </View>
   );
 }
@@ -261,21 +244,10 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   bottomGlow: {
-    borderRadius: radius.pill,
-    bottom: -140,
-    height: 280,
-    left: -70,
-    position: 'absolute',
-    width: 280,
+    display: 'none',
   },
   centerColumn: {
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    bottom: 0,
-    left: '11%',
-    position: 'absolute',
-    top: 0,
-    width: '78%',
+    display: 'none',
   },
   centerText: {
     textAlign: 'center',
@@ -301,27 +273,20 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   frame: {
-    borderWidth: 1,
-    bottom: 16,
-    left: 16,
-    opacity: 0.22,
-    position: 'absolute',
-    right: 16,
-    top: 16,
+    display: 'none',
   },
   gridColumn: {
-    backgroundColor: 'rgba(99, 126, 168, 0.08)',
-    height: '100%',
-    width: 1,
+    display: 'none',
   },
   gridColumns: {
-    bottom: 0,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    left: '14%',
-    opacity: 0.8,
+    display: 'none',
+  },
+  headerBand: {
+    height: 120,
+    left: 0,
+    opacity: 0.58,
     position: 'absolute',
-    right: '14%',
+    right: 0,
     top: 0,
   },
   metricLabel: {
@@ -344,44 +309,22 @@ const styles = StyleSheet.create({
     fontFamily: font.display,
     fontSize: type.display - 1,
     fontWeight: '900',
-    letterSpacing: -0.8,
+    letterSpacing: 0,
   },
   orbitRingLarge: {
-    borderColor: 'rgba(111, 145, 190, 0.08)',
-    borderRadius: 240,
-    borderWidth: 1,
-    height: 240,
-    position: 'absolute',
-    right: -70,
-    top: 84,
-    width: 240,
+    display: 'none',
   },
   orbitRingSmall: {
-    borderColor: 'rgba(111, 145, 190, 0.08)',
-    borderRadius: 168,
-    borderWidth: 1,
-    height: 168,
-    left: -68,
-    position: 'absolute',
-    top: 184,
-    width: 168,
+    display: 'none',
   },
   outerRail: {
-    backgroundColor: 'rgba(99, 126, 168, 0.16)',
-    flex: 1,
-    width: 1,
+    display: 'none',
   },
   outerRails: {
-    bottom: 0,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    left: 16,
-    position: 'absolute',
-    right: 16,
-    top: 0,
+    display: 'none',
   },
   panel: {
-    borderRadius: radius.lg,
+    borderRadius: radius.md,
     borderWidth: 1,
     overflow: 'hidden',
     paddingHorizontal: 18,
@@ -397,12 +340,7 @@ const styles = StyleSheet.create({
     top: 0,
   },
   rightGlow: {
-    borderRadius: radius.pill,
-    bottom: 70,
-    height: 240,
-    position: 'absolute',
-    right: -90,
-    width: 240,
+    display: 'none',
   },
   safeArea: {
     backgroundColor: palette.background,
@@ -421,28 +359,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   topGlow: {
-    borderRadius: radius.pill,
-    height: 250,
-    left: -88,
-    position: 'absolute',
-    top: -100,
-    width: 250,
+    display: 'none',
   },
   upperRail: {
-    height: 1,
-    left: '10%',
-    opacity: 0.55,
-    position: 'absolute',
-    right: '10%',
-    top: 112,
+    display: 'none',
   },
   midRail: {
-    height: 1,
-    left: '7%',
-    opacity: 0.2,
-    position: 'absolute',
-    right: '7%',
-    top: '49%',
+    display: 'none',
   },
   wordmark: {
     gap: 20,
@@ -463,9 +386,9 @@ const styles = StyleSheet.create({
   wordmarkTitle: {
     color: palette.text,
     fontFamily: font.display,
-    fontSize: type.hero + 2,
+    fontSize: type.hero,
     fontWeight: '900',
-    letterSpacing: -1.7,
+    letterSpacing: 0,
     lineHeight: type.hero + 9,
     marginTop: 10,
   },

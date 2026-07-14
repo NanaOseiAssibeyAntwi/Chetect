@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { layout, palette, type } from '@/constants/design';
+import { layout, palette, radius, shadow, type } from '@/constants/design';
 import {
   fetchStudentDashboardData,
   type StudentDashboardData,
@@ -158,7 +158,7 @@ export default function DashboardScreen() {
                       }
                       style={styles.joinButton}>
                       <Text style={styles.joinButtonText}>Join</Text>
-                      <Feather color="#05303a" name="arrow-right" size={14} />
+                      <Feather color="#ffffff" name="arrow-right" size={14} />
                     </Pressable>
                   ) : null}
                 </View>
@@ -205,11 +205,13 @@ const styles = StyleSheet.create({
   activityCard: {
     backgroundColor: palette.panel,
     borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingHorizontal: 14,
     paddingVertical: 16,
+    ...shadow.card,
   },
   activityDate: {
     color: palette.muted,
@@ -227,7 +229,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   activityScore: {
-    color: palette.success,
+    color: palette.teal,
     fontSize: 20,
     fontWeight: '800',
     textAlign: 'right',
@@ -242,11 +244,11 @@ const styles = StyleSheet.create({
   },
   avatarBox: {
     alignItems: 'center',
-    borderColor: palette.teal,
-    borderWidth: 1,
-    height: 30,
+    backgroundColor: palette.tealSoft,
+    borderRadius: radius.pill,
+    height: 34,
     justifyContent: 'center',
-    width: 30,
+    width: 34,
   },
   avatarText: {
     color: palette.teal,
@@ -279,6 +281,7 @@ const styles = StyleSheet.create({
   emptyCard: {
     backgroundColor: palette.panel,
     borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     paddingHorizontal: 14,
     paddingVertical: 16,
@@ -295,8 +298,9 @@ const styles = StyleSheet.create({
   },
   errorCard: {
     alignItems: 'flex-start',
-    backgroundColor: '#2f1116',
-    borderColor: '#8f2d37',
+    backgroundColor: palette.dangerSoft,
+    borderColor: '#fecaca',
+    borderRadius: radius.md,
     borderWidth: 1,
     marginBottom: 14,
     marginTop: 12,
@@ -304,18 +308,20 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   errorText: {
-    color: '#ff9ea8',
+    color: palette.danger,
     fontSize: type.body,
   },
   examCard: {
     backgroundColor: palette.panel,
     borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     paddingHorizontal: 14,
     paddingVertical: 14,
+    ...shadow.card,
   },
   examCardLive: {
-    borderColor: '#1db9c6',
+    borderColor: palette.teal,
   },
   examCode: {
     color: palette.muted,
@@ -357,14 +363,15 @@ const styles = StyleSheet.create({
   joinButton: {
     alignItems: 'center',
     alignSelf: 'flex-start',
-    backgroundColor: '#36e2d6',
+    backgroundColor: palette.teal,
+    borderRadius: radius.sm,
     flexDirection: 'row',
     gap: 6,
     paddingHorizontal: 12,
     paddingVertical: 9,
   },
   joinButtonText: {
-    color: '#05303a',
+    color: '#ffffff',
     fontSize: type.body,
     fontWeight: '800',
   },
@@ -380,19 +387,21 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   liveText: {
-    color: '#ff7c8f',
+    color: palette.danger,
     fontSize: type.tiny,
     fontWeight: '700',
     letterSpacing: 0.8,
   },
   waitFlag: {
-    borderColor: '#3d557b',
+    backgroundColor: palette.panelSoft,
+    borderColor: palette.border,
+    borderRadius: radius.xs,
     borderWidth: 1,
     paddingHorizontal: 6,
     paddingVertical: 3,
   },
   waitText: {
-    color: '#90acd9',
+    color: palette.mutedStrong,
     fontSize: type.tiny,
     fontWeight: '700',
     letterSpacing: 0.6,
@@ -401,6 +410,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: palette.panel,
     borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: 'row',
     gap: 8,
@@ -416,12 +426,14 @@ const styles = StyleSheet.create({
   metricCard: {
     backgroundColor: palette.panel,
     borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     flex: 1,
     gap: 8,
     minHeight: 68,
     paddingHorizontal: 12,
     paddingVertical: 11,
+    ...shadow.card,
   },
   metricLabel: {
     color: palette.mutedStrong,
@@ -440,14 +452,15 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   retryButton: {
-    borderColor: '#b34954',
+    borderColor: '#fecaca',
+    borderRadius: radius.sm,
     borderWidth: 1,
     marginTop: 10,
     paddingHorizontal: 10,
     paddingVertical: 8,
   },
   retryButtonText: {
-    color: '#ff9ea8',
+    color: palette.danger,
     fontSize: type.body,
     fontWeight: '700',
   },
@@ -469,10 +482,12 @@ const styles = StyleSheet.create({
   sectionLabel: {
     color: palette.mutedStrong,
     fontSize: type.label,
-    letterSpacing: 2,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
   },
   studentId: {
-    color: '#7aa0d6',
+    color: palette.muted,
     fontSize: 11,
   },
   studentName: {

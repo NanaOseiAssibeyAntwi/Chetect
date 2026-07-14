@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { layout, palette, type } from '@/constants/design';
+import { layout, palette, radius, shadow, type } from '@/constants/design';
 import { signInStudent } from '@/lib/student-auth';
 
 export default function SignInScreen() {
@@ -48,8 +48,7 @@ export default function SignInScreen() {
             <Pressable onPress={() => router.back()} style={styles.backButton}>
               <Feather color={palette.mutedStrong} name="chevron-left" size={18} />
             </Pressable>
-            <View style={styles.topDivider} />
-            <Text style={styles.topLabel}>KNUST STUDENT AUTH</Text>
+            <Text style={styles.topLabel}>Student access</Text>
           </View>
 
           <View style={styles.authIconBox}>
@@ -66,7 +65,7 @@ export default function SignInScreen() {
               autoCorrect={false}
               onChangeText={setStudentId}
               placeholder="Student ID or username"
-              placeholderTextColor="#547099"
+              placeholderTextColor={palette.muted}
               style={styles.input}
               value={studentId}
             />
@@ -78,7 +77,7 @@ export default function SignInScreen() {
                 autoCorrect={false}
                 onChangeText={setPassword}
                 placeholder="Password"
-                placeholderTextColor="#547099"
+                placeholderTextColor={palette.muted}
                 secureTextEntry={!showPassword}
                 style={styles.passwordInput}
                 value={password}
@@ -107,21 +106,17 @@ export default function SignInScreen() {
             onPress={handleStudentSignIn}
             style={({ pressed }) => [styles.primaryButton, (pressed || isLoading) && styles.primaryButtonPressed]}>
             {isLoading ? (
-              <ActivityIndicator color="#03221a" size="small" />
+              <ActivityIndicator color="#ffffff" size="small" />
             ) : (
               <Text style={styles.primaryButtonText}>Authenticate</Text>
             )}
           </Pressable>
 
-          <Text style={styles.supportCopy}>
-            Need help? <Text style={styles.supportAccent}>Contact KNUST IT Support</Text>
-          </Text>
-
           <View style={styles.footerSpacer} />
 
           <View style={styles.securityBar}>
-            <Text style={styles.securityLabel}>ACCESS LEVEL</Text>
-            <Text style={styles.securityText}>STUDENT - L1</Text>
+            <Text style={styles.securityLabel}>Access level</Text>
+            <Text style={styles.securityText}>Student</Text>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -132,20 +127,22 @@ export default function SignInScreen() {
 const styles = StyleSheet.create({
   authIconBox: {
     alignItems: 'center',
-    borderColor: palette.teal,
-    borderWidth: 1,
-    height: 40,
+    backgroundColor: palette.tealSoft,
+    borderRadius: radius.md,
+    height: 44,
     justifyContent: 'center',
     marginTop: 22,
-    width: 40,
+    width: 44,
   },
   backButton: {
     alignItems: 'center',
+    backgroundColor: palette.panel,
     borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
-    height: 30,
+    height: 36,
     justifyContent: 'center',
-    width: 30,
+    width: 36,
   },
   content: {
     alignSelf: 'center',
@@ -156,15 +153,17 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   errorText: {
-    color: '#ff8f8f',
+    color: palette.danger,
     fontSize: type.body,
     marginTop: 16,
   },
   fieldLabel: {
     color: palette.mutedStrong,
     fontSize: type.label,
-    letterSpacing: 1.9,
+    fontWeight: '700',
+    letterSpacing: 0.5,
     marginBottom: 8,
+    textTransform: 'uppercase',
   },
   footerSpacer: {
     flex: 1,
@@ -177,6 +176,7 @@ const styles = StyleSheet.create({
   input: {
     backgroundColor: palette.panel,
     borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     color: palette.text,
     fontSize: type.bodyLarge,
@@ -187,6 +187,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: palette.panel,
     borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: 'row',
     gap: 8,
@@ -200,7 +201,8 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     alignItems: 'center',
-    backgroundColor: '#17c9a4',
+    backgroundColor: palette.teal,
+    borderRadius: radius.md,
     marginTop: 24,
     minHeight: 48,
     justifyContent: 'center',
@@ -209,7 +211,7 @@ const styles = StyleSheet.create({
     opacity: 0.92,
   },
   primaryButtonText: {
-    color: '#03221a',
+    color: '#ffffff',
     fontSize: type.bodyLarge,
     fontWeight: '800',
   },
@@ -220,54 +222,39 @@ const styles = StyleSheet.create({
   securityBar: {
     alignItems: 'center',
     backgroundColor: palette.panel,
-    borderColor: '#0f7a66',
+    borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingHorizontal: 14,
     paddingVertical: 12,
+    ...shadow.card,
   },
   securityLabel: {
-    color: '#38dfbb',
-    fontSize: type.tiny,
-    letterSpacing: 1.4,
+    color: palette.mutedStrong,
+    fontSize: type.body,
   },
   securityText: {
-    color: '#38dfbb',
-    fontSize: type.label,
+    color: palette.text,
+    fontSize: type.body,
     fontWeight: '700',
-    letterSpacing: 1.2,
   },
   subtitle: {
-    color: '#6f88aa',
+    color: palette.mutedStrong,
     fontSize: type.subtitle,
     marginTop: 8,
   },
-  supportAccent: {
-    color: '#38dfbb',
-    fontWeight: '700',
-  },
-  supportCopy: {
-    color: palette.mutedStrong,
-    fontSize: type.body,
-    marginTop: 16,
-    textAlign: 'center',
-  },
   title: {
     color: palette.text,
-    fontSize: type.title + 1,
+    fontSize: type.display,
     fontWeight: '800',
     marginTop: 22,
   },
-  topDivider: {
-    backgroundColor: palette.border,
-    height: 20,
-    width: 1,
-  },
   topLabel: {
     color: palette.mutedStrong,
-    fontSize: type.label,
-    letterSpacing: 2,
+    fontSize: type.body,
+    fontWeight: '700',
   },
   topRow: {
     alignItems: 'center',
@@ -278,12 +265,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: palette.panel,
     borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginTop: 22,
     paddingHorizontal: 16,
     paddingVertical: 14,
+    ...shadow.card,
   },
   verificationDot: {
     backgroundColor: palette.success,
@@ -299,8 +288,9 @@ const styles = StyleSheet.create({
   verificationMeta: {
     color: palette.mutedStrong,
     fontSize: type.tiny,
-    letterSpacing: 1.4,
+    letterSpacing: 0.4,
     marginTop: 4,
+    textTransform: 'uppercase',
   },
   verificationTitle: {
     color: palette.text,

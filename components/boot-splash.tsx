@@ -66,7 +66,7 @@ const styles = StyleSheet.create({
     fontFamily: font.display,
     fontSize: type.display + 2,
     fontWeight: '900',
-    letterSpacing: -1,
+    letterSpacing: 0,
     marginTop: 20,
   },
 });

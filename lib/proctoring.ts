@@ -166,8 +166,8 @@ export const SUSPICIOUS_CLIP_BUCKET = 'suspiciousVideos';
 const ANALYSIS_LABEL_WEIGHT: Record<AnalysisLabel, number> = {
   CAUTION: 2,
   NORMAL: 1,
-  NO_FACE: 0,
-  SUSPICIOUS: 3,
+  NO_FACE: 3,
+  SUSPICIOUS: 4,
 };
 const DEFAULT_DETECTOR_BASE_URL = 'https://cheatingmonitormodel.onrender.com';
 let detectorSummaryEndpointUnsupported = false;
@@ -496,11 +496,13 @@ function normalizeSuspiciousEventCount(value: unknown) {
 }
 
 function resolveSuspiciousEventCount(value: unknown, fallbackCount: number) {
+  const normalizedFallback = Math.max(0, Math.trunc(fallbackCount));
+
   if (value === null || value === undefined || String(value).trim() === '') {
-    return Math.max(0, Math.trunc(fallbackCount));
+    return normalizedFallback;
   }
 
-  return normalizeSuspiciousEventCount(value);
+  return Math.max(normalizeSuspiciousEventCount(value), normalizedFallback);
 }
 
 function toAnalysisLabel(value: unknown): AnalysisLabel {
@@ -647,12 +649,14 @@ export function mergeAggregateMetrics(
 
   const summaryLabel = toAnalysisLabel(summary.final_label);
   const nextFinalLabel =
+    current.framesSampled === 0 ||
     ANALYSIS_LABEL_WEIGHT[summaryLabel] >= ANALYSIS_LABEL_WEIGHT[current.finalLabel]
       ? summaryLabel
       : current.finalLabel;
 
   const summaryObservation = buildDetectorObservationSummary(summary, 3, {
     includeAlertReasons: true,
+    includeKeyFrameObservations: true,
   });
   const nextObservation = summaryObservation || current.latestObservation;
 

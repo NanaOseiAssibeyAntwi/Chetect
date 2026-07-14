@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { layout, palette, type } from '@/constants/design';
+import { layout, palette, radius, shadow, type } from '@/constants/design';
 import {
   fetchInvigilatorMonitorData,
   fetchInvigilatorSuspiciousEvents,
@@ -30,11 +30,11 @@ type MonitorFilter = (typeof filters)[number];
 
 function getRiskPresentation(riskLevel: MonitorRiskLevel) {
   if (riskLevel === 'critical') {
-    return { color: '#f94144', label: 'CRIT' };
+    return { color: palette.danger, label: 'CRIT' };
   }
 
   if (riskLevel === 'high') {
-    return { color: '#ef476f', label: 'HIGH' };
+    return { color: palette.danger, label: 'HIGH' };
   }
 
   if (riskLevel === 'medium') {
@@ -431,7 +431,7 @@ export default function InvigilatorMonitorScreen() {
             <Text style={styles.statLabel}>FLAGGED</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={[styles.statValue, { color: '#7a95c3' }]}>{monitorData?.stats.done ?? 0}</Text>
+            <Text style={[styles.statValue, { color: palette.mutedStrong }]}>{monitorData?.stats.done ?? 0}</Text>
             <Text style={styles.statLabel}>DONE</Text>
           </View>
         </View>
@@ -524,7 +524,7 @@ export default function InvigilatorMonitorScreen() {
 
                     <View style={styles.flagRow}>
                       {flags.map((flag) => {
-                        const chipColor = flag.state === 'alert' ? '#ef476f' : palette.success;
+                        const chipColor = flag.state === 'alert' ? palette.danger : palette.success;
 
                         return (
                           <View
@@ -736,23 +736,24 @@ const styles = StyleSheet.create({
   },
   clipToggleButton: {
     alignItems: 'center',
-    borderColor: '#2f4d75',
+    borderColor: palette.border,
+    borderRadius: radius.sm,
     borderWidth: 1,
     marginTop: 10,
     paddingVertical: 10,
   },
   clipToggleText: {
-    color: '#9ab5dd',
+    color: palette.teal,
     fontSize: type.body,
     fontWeight: '700',
   },
   clipWaitingText: {
-    color: '#93abcf',
+    color: palette.mutedStrong,
     fontSize: type.body,
     marginTop: 6,
   },
   clipErrorText: {
-    color: '#ff9ea8',
+    color: palette.danger,
     fontSize: type.body,
     marginTop: 8,
   },
@@ -764,9 +765,11 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   courseCode: {
-    color: '#6f8fbc',
+    color: palette.muted,
     fontSize: type.label,
-    letterSpacing: 2,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
   },
   courseTitle: {
     color: palette.text,
@@ -777,6 +780,7 @@ const styles = StyleSheet.create({
   emptyCard: {
     backgroundColor: palette.panel,
     borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     marginTop: 8,
     paddingHorizontal: 14,
@@ -794,8 +798,9 @@ const styles = StyleSheet.create({
   },
   errorCard: {
     alignItems: 'flex-start',
-    backgroundColor: '#2f1116',
-    borderColor: '#8f2d37',
+    backgroundColor: palette.dangerSoft,
+    borderColor: '#fecaca',
+    borderRadius: radius.md,
     borderWidth: 1,
     marginBottom: 8,
     marginTop: 10,
@@ -803,15 +808,17 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   errorText: {
-    color: '#ff9ea8',
+    color: palette.danger,
     fontSize: type.body,
   },
   eventCard: {
-    backgroundColor: '#0b172b',
-    borderColor: '#234069',
+    backgroundColor: palette.panel,
+    borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     paddingHorizontal: 12,
     paddingVertical: 12,
+    ...shadow.card,
   },
   eventHeader: {
     alignItems: 'center',
@@ -829,29 +836,30 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   alertDetailChip: {
-    backgroundColor: '#132744',
-    borderColor: '#2c4f7a',
+    backgroundColor: palette.panelSoft,
+    borderColor: palette.border,
+    borderRadius: radius.sm,
     borderWidth: 1,
     flex: 1,
     paddingHorizontal: 8,
     paddingVertical: 7,
   },
   alertDetailLabel: {
-    color: '#88a8d2',
+    color: palette.muted,
     fontSize: 10,
     letterSpacing: 0.9,
   },
   alertDetailValue: {
-    color: '#dbe9ff',
+    color: palette.text,
     fontSize: type.tiny,
     fontWeight: '700',
     marginTop: 4,
     textTransform: 'uppercase',
   },
   eventMeta: {
-    color: '#85a0c7',
+    color: palette.muted,
     fontSize: type.tiny,
-    letterSpacing: 1,
+    letterSpacing: 0.4,
     marginTop: 5,
     textTransform: 'uppercase',
   },
@@ -861,12 +869,12 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   eventStudent: {
-    color: '#d7e5ff',
+    color: palette.text,
     fontSize: type.body,
     fontWeight: '700',
   },
   eventTime: {
-    color: '#8fa5c6',
+    color: palette.muted,
     fontSize: type.tiny,
   },
   eventsCount: {
@@ -887,11 +895,15 @@ const styles = StyleSheet.create({
   eventsTitle: {
     color: palette.mutedStrong,
     fontSize: type.label,
-    letterSpacing: 2.2,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
   },
   faceBox: {
     alignItems: 'center',
-    borderColor: '#205477',
+    backgroundColor: palette.panel,
+    borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     height: 30,
     justifyContent: 'center',
@@ -916,9 +928,10 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   filterText: {
-    color: '#6f8fbc',
+    color: palette.muted,
     fontSize: type.label,
-    letterSpacing: 1.8,
+    fontWeight: '700',
+    letterSpacing: 0.5,
     paddingBottom: 12,
   },
   filterTextActive: {
@@ -931,11 +944,12 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   filterUnderlineActive: {
-    backgroundColor: palette.warning,
+    backgroundColor: palette.teal,
   },
   flagChip: {
     alignItems: 'center',
     borderWidth: 1,
+    borderRadius: radius.xs,
     height: 18,
     justifyContent: 'center',
     minWidth: 18,
@@ -967,6 +981,7 @@ const styles = StyleSheet.create({
     marginLeft: 6,
   },
   levelBadge: {
+    borderRadius: radius.xs,
     borderWidth: 1,
     paddingHorizontal: 6,
     paddingVertical: 3,
@@ -984,7 +999,7 @@ const styles = StyleSheet.create({
   liveText: {
     fontSize: type.label,
     fontWeight: '700',
-    letterSpacing: 1.1,
+    letterSpacing: 0.5,
   },
   liveWrap: {
     alignItems: 'center',
@@ -995,6 +1010,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: palette.panel,
     borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: 'row',
     gap: 8,
@@ -1008,14 +1024,15 @@ const styles = StyleSheet.create({
     fontSize: type.body,
   },
   retryButton: {
-    borderColor: '#b34954',
+    borderColor: '#fecaca',
+    borderRadius: radius.sm,
     borderWidth: 1,
     marginTop: 10,
     paddingHorizontal: 10,
     paddingVertical: 8,
   },
   retryButtonText: {
-    color: '#ff9ea8',
+    color: palette.danger,
     fontSize: type.body,
     fontWeight: '700',
   },
@@ -1037,14 +1054,16 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scanBox: {
-    backgroundColor: '#07121f',
+    backgroundColor: palette.panelSoft,
+    borderTopLeftRadius: radius.md,
+    borderTopRightRadius: radius.md,
     borderTopWidth: 2,
     height: 120,
     overflow: 'hidden',
     position: 'relative',
   },
   scanGrid: {
-    borderColor: '#0d3552',
+    borderColor: palette.border,
     borderWidth: 1,
     bottom: 10,
     left: 10,
@@ -1060,20 +1079,22 @@ const styles = StyleSheet.create({
     right: 10,
   },
   segmentCard: {
-    backgroundColor: '#0a1323',
-    borderColor: '#20324f',
+    backgroundColor: palette.panelSoft,
+    borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     paddingHorizontal: 10,
     paddingVertical: 10,
   },
   segmentMeta: {
-    color: '#8ea7ca',
+    color: palette.muted,
     fontSize: type.tiny,
-    letterSpacing: 0.8,
+    letterSpacing: 0.4,
     marginBottom: 4,
   },
   segmentVideo: {
-    backgroundColor: '#02050d',
+    backgroundColor: '#111827',
+    borderRadius: radius.sm,
     height: 176,
     marginTop: 6,
     width: '100%',
@@ -1088,9 +1109,10 @@ const styles = StyleSheet.create({
     minHeight: 58,
   },
   statLabel: {
-    color: '#6f8fbc',
+    color: palette.muted,
     fontSize: type.tiny,
-    letterSpacing: 1.2,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
   },
   statValue: {
     color: palette.text,
@@ -1113,11 +1135,13 @@ const styles = StyleSheet.create({
   studentCard: {
     backgroundColor: palette.panel,
     borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     width: '48.5%',
+    ...shadow.card,
   },
   studentId: {
-    color: '#6f8fbc',
+    color: palette.muted,
     fontSize: 10,
     marginTop: 4,
   },
@@ -1129,12 +1153,12 @@ const styles = StyleSheet.create({
   studentStatus: {
     color: palette.mutedStrong,
     fontSize: type.tiny,
-    letterSpacing: 1.1,
+    letterSpacing: 0.4,
     marginTop: 6,
     textTransform: 'uppercase',
   },
   studentObservation: {
-    color: '#7c98c3',
+    color: palette.mutedStrong,
     fontSize: type.tiny,
     lineHeight: 16,
     marginTop: 4,

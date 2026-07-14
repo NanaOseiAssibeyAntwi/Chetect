@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { layout, type } from '@/constants/design';
+import { layout, palette, radius, shadow, type } from '@/constants/design';
 import {
   analyzeVideoSummary,
   buildDetectorObservationSummary,
@@ -72,6 +72,7 @@ type PendingTrailingEvidence = {
 type LiveDetectorSummary = Awaited<ReturnType<typeof analyzeVideoSummary>>;
 type LiveDetectorAlert = LiveDetectorSummary['alerts'][number];
 type LiveDetectorEvent = LiveDetectorSummary['events'][number];
+type LiveDetectorLabel = ReturnType<typeof detectorLabelToAnalysisLabel>;
 
 function normalizeDetectorSeverity(value: string | null | undefined) {
   return String(value ?? '').trim().toLowerCase();
@@ -105,6 +106,13 @@ function isPersistentMildHeadPoseOrGazeEvent(event: LiveDetectorEvent) {
   return score >= 85 && durationSeconds >= 1.8;
 }
 
+function isPersistentMildHeadPoseOrGazeAlert(alert: LiveDetectorAlert) {
+  const severity = normalizeDetectorSeverity(alert.severity);
+  const durationSeconds = toFiniteDetectorSeconds(alert.duration_seconds);
+
+  return (severity === 'critical' || severity === 'high') && durationSeconds >= 1.2;
+}
+
 function doDetectorWindowsOverlap(
   startASeconds: number,
   endASeconds: number,
@@ -117,11 +125,23 @@ function doDetectorWindowsOverlap(
 function isDetectorAlertActionable(alert: LiveDetectorAlert) {
   const severity = normalizeDetectorSeverity(alert.severity);
   const label = detectorLabelToAnalysisLabel(alert.label);
-  if (label !== 'SUSPICIOUS' && severity !== 'high' && severity !== 'critical') {
+  if (label === 'NO_FACE') {
+    return true;
+  }
+
+  if (isMildHeadPoseOrGazeReason(String(alert.reason ?? ''))) {
+    return isPersistentMildHeadPoseOrGazeAlert(alert);
+  }
+
+  if (label === 'SUSPICIOUS' || label === 'CAUTION') {
+    return true;
+  }
+
+  if (severity !== 'high' && severity !== 'critical') {
     return false;
   }
 
-  return !isMildHeadPoseOrGazeReason(String(alert.reason ?? ''));
+  return true;
 }
 
 function doesDetectorEventMatchAlert(event: LiveDetectorEvent, alert: LiveDetectorAlert) {
@@ -137,7 +157,11 @@ function isDetectorEventActionable(event: LiveDetectorEvent) {
   const label = detectorLabelToAnalysisLabel(event.label);
   const severity = normalizeDetectorSeverity(event.severity);
   const score = Number(event.max_score ?? 0);
-  if (label !== 'SUSPICIOUS') {
+  if (label === 'NO_FACE') {
+    return true;
+  }
+
+  if (label === 'NORMAL') {
     return false;
   }
 
@@ -145,7 +169,100 @@ function isDetectorEventActionable(event: LiveDetectorEvent) {
     return isPersistentMildHeadPoseOrGazeEvent(event);
   }
 
+  if (label === 'CAUTION') {
+    return severity === 'critical' || severity === 'high' || severity === 'medium' || score >= 45;
+  }
+
   return severity === 'critical' || severity === 'high' || score >= 75;
+}
+
+function getSyntheticEventScoreFloor(label: LiveDetectorLabel) {
+  if (label === 'NO_FACE') {
+    return 85;
+  }
+
+  if (label === 'SUSPICIOUS') {
+    return 80;
+  }
+
+  if (label === 'CAUTION') {
+    return 60;
+  }
+
+  return 0;
+}
+
+function getSyntheticEventReason(summary: LiveDetectorSummary, label: LiveDetectorLabel) {
+  const observationSummary = buildDetectorObservationSummary(summary, 3, {
+    includeAlertReasons: true,
+    includeKeyFrameObservations: true,
+  });
+
+  if (observationSummary) {
+    return observationSummary;
+  }
+
+  if (label === 'NO_FACE') {
+    return 'Face is not visible to the camera.';
+  }
+
+  if (label === 'CAUTION') {
+    return 'Monitoring caution detected in the latest camera window.';
+  }
+
+  return 'Suspicious behavior detected in the latest camera window.';
+}
+
+function createSyntheticActionableEvent(
+  summary: LiveDetectorSummary,
+  label: LiveDetectorLabel
+): LiveDetectorEvent {
+  const durationSeconds = Math.max(
+    0.1,
+    toFiniteDetectorSeconds(summary.duration_seconds) || CLIP_SECONDS
+  );
+  const framesProcessed = Math.max(0, Math.trunc(Number(summary.frames_processed ?? 0)));
+  const framesSampled = Math.max(0, Math.trunc(Number(summary.frames_sampled ?? 0)));
+  const rawMaxScore = Number(summary.max_score ?? 0);
+  const maxScore = Math.max(
+    getSyntheticEventScoreFloor(label),
+    Number.isFinite(rawMaxScore) ? rawMaxScore : 0
+  );
+
+  return {
+    duration_seconds: durationSeconds,
+    end_frame_index: Math.max(0, framesProcessed - 1),
+    end_timestamp_seconds: durationSeconds,
+    frame_count: Math.max(1, framesSampled || framesProcessed || 1),
+    label,
+    max_score: maxScore,
+    reason: getSyntheticEventReason(summary, label),
+    severity: label === 'NO_FACE' || label === 'SUSPICIOUS' ? 'high' : 'medium',
+    signal_code: label === 'NO_FACE' ? 'NO_FACE' : label,
+    start_frame_index: 0,
+    start_timestamp_seconds: 0,
+  };
+}
+
+function shouldCreateSyntheticActionableEvent(
+  summary: LiveDetectorSummary,
+  label: LiveDetectorLabel,
+  actionableCount: number
+) {
+  if (actionableCount > 0) {
+    return false;
+  }
+
+  const hasAnalyzedFrames = Number(summary.frames_sampled ?? 0) > 0 || Number(summary.frames_processed ?? 0) > 0;
+  if (!hasAnalyzedFrames) {
+    return false;
+  }
+
+  if (label === 'NO_FACE' || label === 'SUSPICIOUS') {
+    return true;
+  }
+
+  return label === 'CAUTION' && Number(summary.max_score ?? 0) >= 60;
 }
 
 function doesSummaryOnlyContainMildHeadPoseOrGazeSignals(summary: LiveDetectorSummary) {
@@ -219,8 +336,22 @@ function buildActionableDetectorSummary(summary: LiveDetectorSummary): LiveDetec
     actionableEvents = summary.events.filter(isDetectorEventActionable);
   }
 
-  const actionableCount = actionableAlerts.length > 0 ? actionableAlerts.length : actionableEvents.length;
   const normalizedFinalLabel = detectorLabelToAnalysisLabel(summary.final_label);
+  if (actionableAlerts.length > 0 && actionableEvents.length === 0) {
+    actionableEvents = [
+      createSyntheticActionableEvent(
+        summary,
+        normalizedFinalLabel === 'NORMAL' ? 'SUSPICIOUS' : normalizedFinalLabel
+      ),
+    ];
+  }
+
+  let actionableCount = Math.max(actionableAlerts.length, actionableEvents.length);
+  if (shouldCreateSyntheticActionableEvent(summary, normalizedFinalLabel, actionableCount)) {
+    actionableEvents = [createSyntheticActionableEvent(summary, normalizedFinalLabel)];
+    actionableCount = 1;
+  }
+
   const hasOnlyMildHeadPoseOrGazeSignals = doesSummaryOnlyContainMildHeadPoseOrGazeSignals(summary);
   const downgradedFinalLabel =
     actionableCount === 0 &&
@@ -234,6 +365,10 @@ function buildActionableDetectorSummary(summary: LiveDetectorSummary): LiveDetec
     alerts: actionableAlerts,
     events: actionableEvents,
     final_label: downgradedFinalLabel,
+    max_score: Math.max(
+      Number(summary.max_score ?? 0),
+      ...actionableEvents.map((event) => Number(event.max_score ?? 0))
+    ),
     suspicious_event_count: actionableCount,
   };
 }
@@ -952,10 +1087,10 @@ export default function ExamSessionScreen() {
       aggregateMetricsRef.current = mergedMetrics;
       const latestWindowLabel = detectorLabelToAnalysisLabel(summary.final_label);
       const latestWindowFlaggedCount = Math.max(0, Math.trunc(Number(summary.suspicious_event_count ?? 0)));
-      const latestWindowObservationSummary =
-        latestWindowFlaggedCount > 0
-          ? buildDetectorObservationSummary(summary, 3, { includeAlertReasons: true })
-          : '';
+      const latestWindowObservationSummary = buildDetectorObservationSummary(summary, 3, {
+        includeAlertReasons: true,
+        includeKeyFrameObservations: true,
+      });
       setLatestWindowLabel(latestWindowLabel);
       setLatestWindowEventCount(latestWindowFlaggedCount);
       setLatestWindowObservation(latestWindowObservationSummary);
@@ -1599,7 +1734,13 @@ export default function ExamSessionScreen() {
   const faceDetected =
     hasSampledFrames && proctoringStatus !== 'error' && effectiveWindowLabel !== 'NO_FACE';
   const onScreen = hasSampledFrames && faceDetected && effectiveWindowLabel === 'NORMAL';
-  const hasMonitoringAlert = proctoringStatus === 'error' || latestWindowEventCount > 0;
+  const hasMonitoringAlert =
+    proctoringStatus === 'error' ||
+    (hasSampledFrames &&
+      (latestWindowEventCount > 0 ||
+        effectiveWindowLabel === 'NO_FACE' ||
+        effectiveWindowLabel === 'CAUTION' ||
+        effectiveWindowLabel === 'SUSPICIOUS'));
   const monitoringAlertMessage =
     proctoringStatus === 'error'
       ? proctoringMessage
@@ -1607,6 +1748,12 @@ export default function ExamSessionScreen() {
       ? 'Live monitoring active. Waiting for first detection window...'
       : latestWindowEventCount > 0
       ? `${latestWindowEventCount} suspicious event(s) detected in the latest window.${latestWindowObservation ? ` Reasons: ${latestWindowObservation}` : ''}`
+      : effectiveWindowLabel === 'NO_FACE'
+      ? `Face is not visible in the latest 5-second window.${latestWindowObservation ? ` ${latestWindowObservation}` : ''}`
+      : effectiveWindowLabel === 'CAUTION'
+      ? `Monitoring caution in the latest 5-second window.${latestWindowObservation ? ` ${latestWindowObservation}` : ''}`
+      : effectiveWindowLabel === 'SUSPICIOUS'
+      ? `Suspicious activity detected in the latest 5-second window.${latestWindowObservation ? ` ${latestWindowObservation}` : ''}`
       : 'No suspicious activity in the latest 5-second window.';
   const faceBadgeMode = !hasSampledFrames ? 'pending' : faceDetected ? 'good' : 'warning';
   const screenBadgeMode = !hasSampledFrames ? 'pending' : onScreen ? 'good' : 'warning';
@@ -1629,7 +1776,7 @@ export default function ExamSessionScreen() {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.headerRow}>
           <Pressable onPress={() => router.back()} style={styles.backButton}>
-            <Feather color="#6483a6" name="chevron-left" size={18} />
+            <Feather color={palette.mutedStrong} name="chevron-left" size={18} />
           </Pressable>
           <Text numberOfLines={1} style={styles.headerMeta}>
             {examMeta}
@@ -1643,7 +1790,7 @@ export default function ExamSessionScreen() {
           <View style={styles.monitorCard}>
             <View style={[styles.monitorAlert, hasMonitoringAlert ? styles.monitorAlertWarning : null]}>
               <Feather
-                color={hasMonitoringAlert ? '#f29915' : '#31b994'}
+                color={hasMonitoringAlert ? palette.warning : palette.success}
                 name={hasMonitoringAlert ? 'alert-triangle' : 'check-circle'}
                 size={14}
               />
@@ -1671,7 +1818,7 @@ export default function ExamSessionScreen() {
                     />
                   ) : (
                     <View style={styles.cameraPlaceholder}>
-                      <Feather color="#7b8fa7" name="camera-off" size={16} />
+                      <Feather color={palette.muted} name="camera-off" size={16} />
                     </View>
                   )}
                   <View pointerEvents="none" style={styles.gazeOuterTarget} />
@@ -1758,7 +1905,7 @@ export default function ExamSessionScreen() {
 
         {isLoading ? (
           <View style={styles.loadingCard}>
-            <ActivityIndicator color="#18b394" size="small" />
+            <ActivityIndicator color={palette.teal} size="small" />
             <Text style={styles.loadingText}>Loading exam questions...</Text>
           </View>
         ) : null}
@@ -1882,7 +2029,7 @@ export default function ExamSessionScreen() {
               onPress={() => void handleSubmit()}
               style={[styles.modalPrimaryButton, isSubmitting ? styles.primaryButtonDisabled : null]}>
               {isSubmitting ? (
-                <ActivityIndicator color="#0f172a" size="small" />
+                <ActivityIndicator color="#ffffff" size="small" />
               ) : (
                 <Text style={styles.modalPrimaryText}>Yes, submit</Text>
               )}
@@ -1903,13 +2050,15 @@ export default function ExamSessionScreen() {
 
 const styles = StyleSheet.create({
   answerCounter: {
-    color: '#6e86a4',
+    color: palette.mutedStrong,
     fontSize: type.body,
     marginTop: 16,
   },
   backButton: {
     alignItems: 'center',
-    borderColor: '#dce8f3',
+    backgroundColor: palette.panel,
+    borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     height: 30,
     justifyContent: 'center',
@@ -1926,15 +2075,16 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   choiceBox: {
-    borderColor: '#bad2e8',
+    borderColor: palette.borderStrong,
+    borderRadius: radius.pill,
     borderWidth: 1,
     height: 18,
     marginTop: 2,
     width: 18,
   },
   choiceBoxActive: {
-    backgroundColor: '#18b394',
-    borderColor: '#18b394',
+    backgroundColor: palette.teal,
+    borderColor: palette.teal,
   },
   content: {
     alignSelf: 'center',
@@ -1944,65 +2094,71 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   emptyQuestionState: {
-    borderColor: '#d5e4f3',
+    backgroundColor: palette.panel,
+    borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     marginTop: 14,
     paddingHorizontal: 14,
     paddingVertical: 16,
   },
   emptyQuestionText: {
-    color: '#5d7393',
+    color: palette.mutedStrong,
     fontSize: type.body,
     lineHeight: 20,
   },
   errorAction: {
-    borderColor: '#df7d7d',
+    borderColor: '#fecaca',
+    borderRadius: radius.sm,
     borderWidth: 1,
     marginTop: 12,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
   errorActionText: {
-    color: '#9e2a2a',
+    color: palette.danger,
     fontSize: type.body,
     fontWeight: '700',
   },
   errorCard: {
     alignItems: 'flex-start',
-    backgroundColor: '#fff4f4',
-    borderColor: '#f0cccc',
+    backgroundColor: palette.dangerSoft,
+    borderColor: '#fecaca',
+    borderRadius: radius.md,
     borderWidth: 1,
     marginTop: 12,
     paddingHorizontal: 12,
     paddingVertical: 12,
   },
   errorText: {
-    color: '#9e2a2a',
+    color: palette.danger,
     fontSize: type.body,
   },
   flagCount: {
-    color: '#6c84a4',
+    color: palette.muted,
     fontSize: type.tiny,
     fontWeight: '700',
     marginLeft: 'auto',
   },
   gazeBackdrop: {
-    backgroundColor: '#e8f4ff',
-    borderColor: '#c2dcf0',
+    backgroundColor: palette.tealSoft,
+    borderColor: palette.border,
+    borderRadius: radius.sm,
     borderWidth: 1,
     flex: 1,
     overflow: 'hidden',
     position: 'relative',
   },
   gazeCard: {
-    borderColor: '#dbe8f3',
+    borderColor: palette.border,
+    borderRadius: radius.sm,
     borderWidth: 1,
     height: 88,
     padding: 6,
     width: 92,
   },
   gazeDot: {
-    backgroundColor: '#e63946',
+    backgroundColor: palette.danger,
     borderRadius: 99,
     height: 6,
     left: '16%',
@@ -2011,7 +2167,7 @@ const styles = StyleSheet.create({
     width: 6,
   },
   gazeInnerTarget: {
-    borderColor: '#15a990',
+    borderColor: palette.teal,
     borderWidth: 1,
     height: '40%',
     left: '31%',
@@ -2020,7 +2176,7 @@ const styles = StyleSheet.create({
     width: '40%',
   },
   gazeOuterTarget: {
-    borderColor: '#15a990',
+    borderColor: palette.teal,
     borderStyle: 'dashed',
     borderWidth: 1,
     height: '74%',
@@ -2031,8 +2187,9 @@ const styles = StyleSheet.create({
   },
   gazeTag: {
     alignItems: 'center',
-    backgroundColor: '#c9f4e7',
-    borderColor: '#15a990',
+    backgroundColor: palette.successSoft,
+    borderColor: palette.success,
+    borderRadius: radius.xs,
     borderWidth: 1,
     bottom: 8,
     left: 8,
@@ -2041,13 +2198,13 @@ const styles = StyleSheet.create({
     position: 'absolute',
   },
   gazeTagText: {
-    color: '#0f7566',
+    color: palette.success,
     fontSize: type.tiny,
     fontWeight: '700',
     letterSpacing: 0.5,
   },
   headerMeta: {
-    color: '#5f7898',
+    color: palette.mutedStrong,
     flex: 1,
     fontFamily: Platform.select({
       android: 'monospace',
@@ -2069,25 +2226,27 @@ const styles = StyleSheet.create({
   },
   loadingCard: {
     alignItems: 'center',
-    backgroundColor: '#f8fcff',
-    borderColor: '#dbe9f5',
+    backgroundColor: palette.panel,
+    borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: 'row',
     gap: 8,
     marginTop: 12,
     paddingHorizontal: 12,
     paddingVertical: 12,
+    ...shadow.card,
   },
   loadingText: {
-    color: '#5f7898',
+    color: palette.mutedStrong,
     fontSize: type.body,
   },
   metricFill: {
-    backgroundColor: '#17b892',
+    backgroundColor: palette.teal,
     height: '100%',
   },
   metricLabel: {
-    color: '#4c6b8f',
+    color: palette.muted,
     fontFamily: Platform.select({
       android: 'monospace',
       default: undefined,
@@ -2104,12 +2263,12 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   metricTrack: {
-    backgroundColor: '#d5e5f2',
+    backgroundColor: palette.borderSoft,
     flex: 1,
     height: 4,
   },
   metricValue: {
-    color: '#1d9b77',
+    color: palette.teal,
     fontSize: type.body,
     fontWeight: '700',
     textAlign: 'right',
@@ -2121,25 +2280,27 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   modalCard: {
-    backgroundColor: '#ffffff',
-    borderColor: '#d5e4f3',
+    backgroundColor: palette.panel,
+    borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     paddingHorizontal: 20,
     paddingVertical: 20,
     width: '84%',
+    ...shadow.card,
   },
   modalCopy: {
-    color: '#5d7393',
+    color: palette.mutedStrong,
     fontSize: type.bodyLarge,
     lineHeight: 22,
     marginTop: 10,
   },
   modalCopyStrong: {
-    color: '#16263a',
+    color: palette.text,
     fontWeight: '800',
   },
   modalEyebrow: {
-    color: '#cf4e4e',
+    color: palette.danger,
     fontSize: type.label,
     letterSpacing: 2,
   },
@@ -2151,37 +2312,39 @@ const styles = StyleSheet.create({
   },
   modalPrimaryButton: {
     alignItems: 'center',
-    backgroundColor: '#c9f4e7',
-    borderColor: '#15a990',
+    backgroundColor: palette.teal,
+    borderColor: palette.teal,
+    borderRadius: radius.md,
     borderWidth: 1,
     marginTop: 20,
     paddingVertical: 14,
   },
   modalPrimaryText: {
-    color: '#0e6f61',
+    color: '#ffffff',
     fontSize: type.bodyLarge,
     fontWeight: '800',
   },
   modalSecondaryButton: {
     alignItems: 'center',
-    borderColor: '#d5e4f3',
+    borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     marginTop: 8,
     paddingVertical: 14,
   },
   modalSecondaryText: {
-    color: '#5d7393',
+    color: palette.mutedStrong,
     fontSize: type.bodyLarge,
   },
   modalTitle: {
-    color: '#142a43',
+    color: palette.text,
     fontSize: type.display,
     fontWeight: '800',
     marginTop: 10,
   },
   monitorAlert: {
     alignItems: 'center',
-    borderBottomColor: '#dbe8f3',
+    borderBottomColor: palette.border,
     borderBottomWidth: 1,
     flexDirection: 'row',
     gap: 8,
@@ -2190,28 +2353,29 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   monitorAlertText: {
-    color: '#3c6b82',
+    color: palette.mutedStrong,
     flex: 1,
     fontSize: type.bodyLarge,
     fontWeight: '600',
   },
   monitorAlertTextWarning: {
-    color: '#dd8405',
+    color: palette.warning,
   },
   monitorAlertWarning: {
-    backgroundColor: '#fff8eb',
+    backgroundColor: palette.warningSoft,
   },
   monitorBadge: {
     alignItems: 'center',
-    borderColor: '#bee9dc',
+    borderColor: palette.border,
+    borderRadius: radius.sm,
     borderWidth: 1,
     minWidth: 88,
     paddingHorizontal: 8,
     paddingVertical: 7,
   },
   monitorBadgeGood: {
-    backgroundColor: '#f0fdf9',
-    borderColor: '#99e2d0',
+    backgroundColor: palette.successSoft,
+    borderColor: '#bbf7d0',
   },
   monitorBadgeRow: {
     alignItems: 'center',
@@ -2220,33 +2384,35 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   monitorBadgeText: {
-    color: '#cf6c00',
+    color: palette.warning,
     fontSize: type.label,
     fontWeight: '800',
     letterSpacing: 0.6,
   },
   monitorBadgeTextGood: {
-    color: '#0f7f6e',
+    color: palette.success,
   },
   monitorBadgeTextPending: {
-    color: '#67829f',
+    color: palette.mutedStrong,
   },
   monitorBadgePending: {
-    backgroundColor: '#f4f8fc',
-    borderColor: '#cedeed',
+    backgroundColor: palette.panelSoft,
+    borderColor: palette.border,
   },
   monitorBadgeWarn: {
-    backgroundColor: '#fff8ef',
-    borderColor: '#f3d8b1',
+    backgroundColor: palette.warningSoft,
+    borderColor: '#fed7aa',
   },
   monitorCard: {
-    backgroundColor: '#ffffff',
-    borderColor: '#dbe8f3',
+    backgroundColor: palette.panel,
+    borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     marginBottom: 14,
+    ...shadow.card,
   },
   monitorHint: {
-    color: '#6b839f',
+    color: palette.mutedStrong,
     fontSize: type.tiny,
     marginTop: 9,
     paddingBottom: 10,
@@ -2261,8 +2427,9 @@ const styles = StyleSheet.create({
   },
   navigationButton: {
     alignItems: 'center',
-    backgroundColor: '#c9f4e7',
-    borderColor: '#15a990',
+    backgroundColor: palette.teal,
+    borderColor: palette.teal,
+    borderRadius: radius.md,
     borderWidth: 1,
     flex: 1,
     justifyContent: 'center',
@@ -2273,19 +2440,19 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   navigationButtonSecondary: {
-    backgroundColor: '#ffffff',
-    borderColor: '#d5e4f3',
+    backgroundColor: palette.panel,
+    borderColor: palette.border,
     flex: 0.46,
   },
   navigationButtonText: {
-    color: '#0f7f6e',
+    color: '#ffffff',
     fontSize: type.body,
     fontWeight: '800',
     letterSpacing: 0.7,
     textTransform: 'uppercase',
   },
   navigationButtonTextSecondary: {
-    color: '#5f7898',
+    color: palette.mutedStrong,
     fontSize: type.body,
     fontWeight: '700',
     textTransform: 'uppercase',
@@ -2297,8 +2464,9 @@ const styles = StyleSheet.create({
   },
   optionCard: {
     alignItems: 'flex-start',
-    backgroundColor: '#ffffff',
-    borderColor: '#d8e6f3',
+    backgroundColor: palette.panel,
+    borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: 'row',
     gap: 10,
@@ -2306,16 +2474,17 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   optionCardActive: {
-    borderColor: '#16af8d',
+    backgroundColor: palette.tealSoft,
+    borderColor: palette.teal,
   },
   optionKey: {
-    color: '#87a1bc',
+    color: palette.muted,
     fontSize: type.bodyLarge,
     fontWeight: '700',
     marginTop: 1,
   },
   optionText: {
-    color: '#6d86a7',
+    color: palette.text,
     flex: 1,
     fontSize: type.bodyLarge,
     fontWeight: '600',
@@ -2327,14 +2496,15 @@ const styles = StyleSheet.create({
   },
   permissionButton: {
     alignItems: 'center',
-    borderColor: '#9fdccf',
+    borderColor: palette.border,
+    borderRadius: radius.sm,
     borderWidth: 1,
     marginHorizontal: 10,
     marginTop: 10,
     paddingVertical: 11,
   },
   permissionButtonText: {
-    color: '#0f7f6e',
+    color: palette.teal,
     fontSize: type.body,
     fontWeight: '700',
   },
@@ -2342,12 +2512,12 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   progressBar: {
-    backgroundColor: '#d9e7f2',
+    backgroundColor: palette.borderSoft,
     height: 2,
     marginTop: 8,
   },
   progressFill: {
-    backgroundColor: '#18b394',
+    backgroundColor: palette.teal,
     height: 2,
   },
   progressHeader: {
@@ -2356,7 +2526,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   progressLabel: {
-    color: '#6a86a7',
+    color: palette.mutedStrong,
     fontFamily: Platform.select({
       android: 'monospace',
       default: undefined,
@@ -2366,7 +2536,7 @@ const styles = StyleSheet.create({
     fontSize: type.body,
   },
   question: {
-    color: '#08213c',
+    color: palette.text,
     fontSize: type.title,
     fontWeight: '700',
     lineHeight: 31,
@@ -2376,18 +2546,20 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   safeArea: {
-    backgroundColor: '#f7fbff',
+    backgroundColor: palette.background,
     flex: 1,
   },
   submitButton: {
     alignItems: 'center',
-    borderColor: '#17b892',
+    backgroundColor: palette.teal,
+    borderColor: palette.teal,
+    borderRadius: radius.md,
     borderWidth: 1,
     marginTop: 20,
     paddingVertical: 13,
   },
   submitText: {
-    color: '#11a17f',
+    color: '#ffffff',
     fontSize: type.bodyLarge,
     fontWeight: '800',
     letterSpacing: 1.6,
@@ -2395,8 +2567,9 @@ const styles = StyleSheet.create({
   },
   timerBox: {
     alignItems: 'center',
-    backgroundColor: '#ecfff8',
-    borderColor: '#97e1cd',
+    backgroundColor: palette.tealSoft,
+    borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     justifyContent: 'center',
     minHeight: 36,
@@ -2404,7 +2577,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   timerText: {
-    color: '#0e9c7c',
+    color: palette.teal,
     fontFamily: Platform.select({
       android: 'monospace',
       default: undefined,

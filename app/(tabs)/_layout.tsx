@@ -13,19 +13,18 @@ export default function TabLayout() {
         sceneStyle: { backgroundColor: palette.background },
         tabBarActiveTintColor: palette.teal,
         tabBarButton: HapticTab,
-        tabBarInactiveTintColor: '#6b7f9c',
+        tabBarInactiveTintColor: palette.muted,
         tabBarItemStyle: {
           paddingTop: layout.tabBarPaddingTop,
         },
         tabBarLabelStyle: {
           fontSize: type.tiny,
           fontWeight: '700',
-          letterSpacing: 1.1,
+          letterSpacing: 0.4,
           marginTop: 1,
-          textTransform: 'uppercase',
         },
         tabBarStyle: {
-          backgroundColor: palette.background,
+          backgroundColor: palette.panel,
           borderTopColor: palette.border,
           borderTopWidth: 1,
           height: layout.tabBarHeight,

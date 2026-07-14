@@ -363,7 +363,7 @@ const styles = StyleSheet.create({
     fontFamily: font.body,
     fontSize: type.bodyLarge,
     fontWeight: '900',
-    letterSpacing: -0.05,
+    letterSpacing: 0,
   },
   badge: {
     alignItems: 'center',
@@ -381,10 +381,10 @@ const styles = StyleSheet.create({
     width: 6,
   },
   badgeText: {
-    fontFamily: font.mono,
+    fontFamily: font.body,
     fontSize: type.tiny,
     fontWeight: '700',
-    letterSpacing: 1.4,
+    letterSpacing: 0.5,
     textTransform: 'uppercase',
   },
   centerText: {
@@ -453,7 +453,7 @@ const styles = StyleSheet.create({
     fontFamily: font.display,
     fontSize: type.display - 6,
     fontWeight: '900',
-    letterSpacing: -0.8,
+    letterSpacing: 0,
   },
   sectionAction: {
     alignItems: 'flex-end',
@@ -461,10 +461,10 @@ const styles = StyleSheet.create({
   },
   sectionEyebrow: {
     color: palette.mutedStrong,
-    fontFamily: font.mono,
+    fontFamily: font.body,
     fontSize: type.tiny,
     fontWeight: '700',
-    letterSpacing: 1.8,
+    letterSpacing: 0.5,
     textTransform: 'uppercase',
   },
   sectionIntro: {
@@ -488,7 +488,7 @@ const styles = StyleSheet.create({
     fontFamily: font.display,
     fontSize: type.display - 2,
     fontWeight: '900',
-    letterSpacing: -0.8,
+    letterSpacing: 0,
   },
   surfaceCard: {
     borderRadius: radius.md,

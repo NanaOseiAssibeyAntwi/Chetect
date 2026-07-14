@@ -16,7 +16,7 @@ export function BrandMark({ accent = 'teal', size = 58 }: BrandMarkProps) {
       style={[
         styles.shell,
         {
-          borderColor: tone,
+          borderColor: palette.border,
           borderRadius: radius.md,
           height: size,
           width: size,
@@ -33,13 +33,13 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     height: 6,
     position: 'absolute',
-    right: 8,
-    top: 8,
+    right: 9,
+    top: 9,
     width: 6,
   },
   shell: {
     alignItems: 'center',
-    backgroundColor: palette.panelSoft,
+    backgroundColor: palette.panel,
     borderWidth: 1,
     justifyContent: 'center',
   },

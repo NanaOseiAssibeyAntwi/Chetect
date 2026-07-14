@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { layout, palette, type } from '@/constants/design';
+import { layout, palette, radius, shadow, type } from '@/constants/design';
 import {
   fetchInvigilatorDashboardData,
   type InvigilatorDashboardData,
@@ -21,14 +21,14 @@ import {
 
 function riskLevelPresentation(riskLevel: SessionRiskLevel) {
   if (riskLevel === 'high') {
-    return { color: '#ef476f', label: 'HIGH' };
+    return { color: palette.danger, label: 'HIGH' };
   }
 
   if (riskLevel === 'medium') {
-    return { color: '#f1bf21', label: 'MED' };
+    return { color: palette.warning, label: 'MED' };
   }
 
-  return { color: '#28ef8d', label: 'LOW' };
+  return { color: palette.success, label: 'LOW' };
 }
 
 function formatSessionStart(isoDate: string) {
@@ -93,7 +93,7 @@ export default function InvigilatorDashboardScreen() {
       {
         label: 'DONE',
         value: String(dashboardData?.stats.done ?? 0),
-        valueColor: '#8aa0c4',
+        valueColor: palette.mutedStrong,
       },
     ],
     [dashboardData]
@@ -273,6 +273,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     backgroundColor: palette.panel,
     borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -291,7 +292,7 @@ const styles = StyleSheet.create({
     width: 16,
   },
   alertCountText: {
-    color: palette.text,
+    color: '#ffffff',
     fontSize: 9,
     fontWeight: '800',
   },
@@ -322,8 +323,8 @@ const styles = StyleSheet.create({
   },
   avatarBox: {
     alignItems: 'center',
-    borderColor: palette.warning,
-    borderWidth: 1,
+    backgroundColor: palette.warningSoft,
+    borderRadius: radius.pill,
     height: 30,
     justifyContent: 'center',
     width: 30,
@@ -349,7 +350,9 @@ const styles = StyleSheet.create({
   },
   createButton: {
     alignItems: 'center',
-    borderColor: '#6c5211',
+    backgroundColor: palette.panel,
+    borderColor: palette.border,
+    borderRadius: radius.sm,
     borderWidth: 1,
     flexDirection: 'row',
     gap: 6,
@@ -357,13 +360,14 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   createButtonText: {
-    color: palette.warning,
+    color: palette.text,
     fontSize: type.body,
     fontWeight: '700',
   },
   emptyCard: {
     backgroundColor: palette.panel,
     borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     paddingHorizontal: 14,
     paddingVertical: 16,
@@ -380,8 +384,9 @@ const styles = StyleSheet.create({
   },
   errorCard: {
     alignItems: 'flex-start',
-    backgroundColor: '#2f1116',
-    borderColor: '#8f2d37',
+    backgroundColor: palette.dangerSoft,
+    borderColor: '#fecaca',
+    borderRadius: radius.md,
     borderWidth: 1,
     marginBottom: 14,
     marginTop: 12,
@@ -389,7 +394,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   errorText: {
-    color: '#ff9ea8',
+    color: palette.danger,
     fontSize: type.body,
   },
   headerActions: {
@@ -403,6 +408,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   levelBadge: {
+    borderRadius: radius.xs,
     borderWidth: 1,
     paddingHorizontal: 6,
     paddingVertical: 3,
@@ -416,6 +422,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: palette.panel,
     borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: 'row',
     gap: 8,
@@ -423,6 +430,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
     paddingHorizontal: 12,
     paddingVertical: 12,
+    ...shadow.card,
   },
   loadingText: {
     color: palette.mutedStrong,
@@ -431,17 +439,20 @@ const styles = StyleSheet.create({
   metricCard: {
     backgroundColor: palette.panel,
     borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     flex: 1,
     gap: 8,
     minHeight: 68,
     paddingHorizontal: 10,
     paddingVertical: 11,
+    ...shadow.card,
   },
   metricLabel: {
     color: palette.mutedStrong,
     fontSize: type.tiny,
-    letterSpacing: 1.2,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
   },
   metricRow: {
     flexDirection: 'row',
@@ -456,6 +467,7 @@ const styles = StyleSheet.create({
   monitorButton: {
     alignItems: 'center',
     borderColor: palette.border,
+    borderRadius: radius.sm,
     borderWidth: 1,
     flexDirection: 'row',
     gap: 6,
@@ -468,14 +480,15 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   retryButton: {
-    borderColor: '#b34954',
+    borderColor: '#fecaca',
+    borderRadius: radius.sm,
     borderWidth: 1,
     marginTop: 10,
     paddingHorizontal: 10,
     paddingVertical: 8,
   },
   retryButtonText: {
-    color: '#ff9ea8',
+    color: palette.danger,
     fontSize: type.body,
     fontWeight: '700',
   },
@@ -484,7 +497,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   sectionAccent: {
-    color: '#ff6a6a',
+    color: palette.danger,
     fontSize: type.body,
     fontWeight: '700',
     letterSpacing: 0.8,
@@ -505,7 +518,9 @@ const styles = StyleSheet.create({
   sectionLabel: {
     color: palette.mutedStrong,
     fontSize: type.label,
-    letterSpacing: 2.1,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
   },
   sectionRight: {
     alignItems: 'center',
@@ -521,11 +536,13 @@ const styles = StyleSheet.create({
     backgroundColor: palette.panel,
     borderBottomWidth: 1,
     borderColor: palette.border,
+    borderRadius: radius.md,
     borderLeftWidth: 2,
     borderRightWidth: 1,
     borderTopWidth: 1,
     paddingHorizontal: 14,
     paddingVertical: 14,
+    ...shadow.card,
   },
   sessionCode: {
     color: palette.muted,
@@ -569,9 +586,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   staffMeta: {
-    color: palette.warning,
+    color: palette.muted,
     fontSize: 11,
-    letterSpacing: 1.1,
+    letterSpacing: 0.4,
   },
   staffName: {
     color: palette.text,

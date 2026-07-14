@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { layout, palette, type } from '@/constants/design';
+import { layout, palette, radius, shadow, type } from '@/constants/design';
 import {
   fetchInvigilatorProfileData,
   type InvigilatorProfileData,
@@ -217,9 +217,9 @@ export default function InvigilatorProfileScreen() {
           onPress={handleSignOut}
           style={[styles.signOutButton, isSigningOut ? styles.signOutButtonDisabled : null]}>
           {isSigningOut ? (
-            <ActivityIndicator color="#ff5a61" size="small" />
+            <ActivityIndicator color={palette.danger} size="small" />
           ) : (
-            <Feather color="#ff5a61" name="log-out" size={15} />
+            <Feather color={palette.danger} name="log-out" size={15} />
           )}
           <Text style={styles.signOutText}>Sign Out</Text>
         </Pressable>
@@ -231,8 +231,8 @@ export default function InvigilatorProfileScreen() {
 const styles = StyleSheet.create({
   avatarBox: {
     alignItems: 'center',
-    borderColor: palette.warning,
-    borderWidth: 1,
+    backgroundColor: palette.warningSoft,
+    borderRadius: radius.pill,
     height: 50,
     justifyContent: 'center',
     width: 50,
@@ -252,22 +252,25 @@ const styles = StyleSheet.create({
   },
   errorCard: {
     alignItems: 'flex-start',
-    backgroundColor: '#2f1116',
-    borderColor: '#8f2d37',
+    backgroundColor: palette.dangerSoft,
+    borderColor: '#fecaca',
+    borderRadius: radius.md,
     borderWidth: 1,
     marginTop: 14,
     paddingHorizontal: 12,
     paddingVertical: 12,
   },
   errorText: {
-    color: '#ff9ea8',
+    color: palette.danger,
     fontSize: type.body,
   },
   eyebrow: {
     color: palette.mutedStrong,
     fontSize: type.label,
-    letterSpacing: 2.2,
+    fontWeight: '700',
+    letterSpacing: 0.5,
     marginTop: 4,
+    textTransform: 'uppercase',
   },
   footerSpacer: {
     flex: 1,
@@ -282,12 +285,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: palette.panel,
     borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: 'row',
     gap: 14,
     marginTop: 18,
     paddingHorizontal: 16,
     paddingVertical: 16,
+    ...shadow.card,
   },
   heroText: {
     flex: 1,
@@ -320,12 +325,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: palette.panel,
     borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: 'row',
     gap: 8,
     marginTop: 14,
     paddingHorizontal: 12,
     paddingVertical: 12,
+    ...shadow.card,
   },
   loadingText: {
     color: palette.mutedStrong,
@@ -347,14 +354,15 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   retryButton: {
-    borderColor: '#b34954',
+    borderColor: '#fecaca',
+    borderRadius: radius.sm,
     borderWidth: 1,
     marginTop: 10,
     paddingHorizontal: 10,
     paddingVertical: 8,
   },
   retryButtonText: {
-    color: '#ff9ea8',
+    color: palette.danger,
     fontSize: type.body,
     fontWeight: '700',
   },
@@ -368,11 +376,15 @@ const styles = StyleSheet.create({
   sectionLabel: {
     color: palette.mutedStrong,
     fontSize: type.label,
-    letterSpacing: 2.2,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
   },
   signOutButton: {
     alignItems: 'center',
-    borderColor: '#64131e',
+    backgroundColor: palette.dangerSoft,
+    borderColor: '#fecaca',
+    borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: 'row',
     gap: 10,
@@ -383,24 +395,27 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   signOutText: {
-    color: '#ff5a61',
+    color: palette.danger,
     fontSize: type.bodyLarge,
     fontWeight: '700',
   },
   statCard: {
     backgroundColor: palette.panel,
     borderColor: palette.border,
+    borderRadius: radius.md,
     borderWidth: 1,
     flex: 1,
     gap: 8,
     minHeight: 68,
     paddingHorizontal: 12,
     paddingVertical: 11,
+    ...shadow.card,
   },
   statLabel: {
     color: palette.mutedStrong,
     fontSize: type.tiny,
-    letterSpacing: 1.2,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
   },
   statValue: {
     color: palette.warning,
