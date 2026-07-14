@@ -1,8 +1,9 @@
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  BackHandler,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -23,6 +24,21 @@ export default function InvigilatorSignInScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  const returnToLanding = useCallback(() => {
+    router.replace('/');
+  }, []);
+
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      returnToLanding();
+      return true;
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [returnToLanding]);
 
   const handleInvigilatorSignIn = async () => {
     setErrorMessage('');
@@ -45,7 +61,7 @@ export default function InvigilatorSignInScreen() {
         style={styles.safeArea}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <View style={styles.topRow}>
-            <Pressable onPress={() => router.back()} style={styles.backButton}>
+            <Pressable onPress={returnToLanding} style={styles.backButton}>
               <Feather color={palette.mutedStrong} name="chevron-left" size={18} />
             </Pressable>
             <Text style={styles.topLabel}>Invigilator access</Text>
