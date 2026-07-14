@@ -5,6 +5,8 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  AppState,
+  BackHandler,
   Modal,
   Platform,
   Pressable,
@@ -12,10 +14,16 @@ import {
   StyleSheet,
   Text,
   View,
+  type AppStateStatus,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { layout, palette, radius, shadow, type } from '@/constants/design';
+import {
+  getNativeStoredItem,
+  removeNativeStoredItem,
+  setNativeStoredItem,
+} from '@/lib/native-key-value-storage';
 import {
   analyzeVideoSummary,
   buildDetectorObservationSummary,
@@ -48,6 +56,9 @@ const EVIDENCE_LEAD_SECONDS = 2;
 const EVIDENCE_TRAIL_SECONDS = 2;
 const SEGMENT_PRUNE_WINDOW_SECONDS = 32;
 const PROCTORING_CLIP_CACHE_DIR = 'proctoring-live-clips';
+const APP_EXIT_STORAGE_KEY = 'chetect.exam.appExitMarker';
+const APP_EXIT_FLAG_THRESHOLD_MS = 5_000;
+const APP_EXIT_FORCE_SUBMIT_THRESHOLD_MS = 10_000;
 const EVIDENCE_UPLOAD_BLOCKED_MESSAGE =
   'Suspicious clip evidence upload is blocked by Supabase Storage policy until the latest suspiciousVideos migration is applied.';
 const EVIDENCE_UPLOAD_WARNING_MESSAGE =
@@ -67,6 +78,12 @@ type PendingTrailingEvidence = {
   evidence: SuspiciousEventEvidence;
   missingLeadCoverage: boolean;
   targetWindowEndMs: number;
+};
+
+type AppExitMarker = {
+  examId: string;
+  startedAtIso: string;
+  startedAtMs: number;
 };
 
 type LiveDetectorSummary = Awaited<ReturnType<typeof analyzeVideoSummary>>;
@@ -384,6 +401,75 @@ function formatCountdown(totalSeconds: number) {
   }
 
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function formatDurationSeconds(durationMs: number) {
+  return `${Math.max(0, durationMs / 1000).toFixed(1)}s`;
+}
+
+function parseStoredAppExitMarker(raw: string | null): AppExitMarker | null {
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const value = JSON.parse(raw) as Partial<AppExitMarker>;
+    const examId = String(value.examId ?? '').trim();
+    const startedAtIso = String(value.startedAtIso ?? '').trim();
+    const startedAtMs = Number(value.startedAtMs);
+
+    if (!examId || !startedAtIso || !Number.isFinite(startedAtMs)) {
+      return null;
+    }
+
+    return {
+      examId,
+      startedAtIso,
+      startedAtMs,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function readStoredAppExitMarker() {
+  if (Platform.OS === 'web') {
+    try {
+      return parseStoredAppExitMarker(globalThis.localStorage?.getItem(APP_EXIT_STORAGE_KEY) ?? null);
+    } catch {
+      return null;
+    }
+  }
+
+  return parseStoredAppExitMarker(await getNativeStoredItem(APP_EXIT_STORAGE_KEY));
+}
+
+async function writeStoredAppExitMarker(marker: AppExitMarker) {
+  const payload = JSON.stringify(marker);
+
+  if (Platform.OS === 'web') {
+    try {
+      globalThis.localStorage?.setItem(APP_EXIT_STORAGE_KEY, payload);
+    } catch {
+      // Restricted browsers may block storage; app-state refs still cover the current process.
+    }
+    return;
+  }
+
+  await setNativeStoredItem(APP_EXIT_STORAGE_KEY, payload);
+}
+
+async function clearStoredAppExitMarker() {
+  if (Platform.OS === 'web') {
+    try {
+      globalThis.localStorage?.removeItem(APP_EXIT_STORAGE_KEY);
+    } catch {
+      // Ignore storage cleanup failures in restricted browser contexts.
+    }
+    return;
+  }
+
+  await removeNativeStoredItem(APP_EXIT_STORAGE_KEY);
 }
 
 function clampPercent(value: number) {
@@ -726,7 +812,13 @@ export default function ExamSessionScreen() {
   const shouldMonitorRef = useRef(false);
   const isRecordingRef = useRef(false);
   const hasSubmittedRef = useRef(false);
+  const selectedOptionsRef = useRef<Record<string, string>>({});
+  const sessionDataRef = useRef<StudentExamSessionData | null>(null);
   const timeoutSubmitTriggeredRef = useRef(false);
+  const appExitStartedAtRef = useRef<number | null>(null);
+  const appExitStartedIsoRef = useRef<string | null>(null);
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  const appExitHandlingRef = useRef(false);
   const proctoringHandleRef = useRef<ProctoringSessionHandle | null>(null);
   const heartbeatRefreshBusyRef = useRef(false);
   const lastSuccessfulAnalysisAtRef = useRef<number | null>(null);
@@ -735,6 +827,14 @@ export default function ExamSessionScreen() {
   const recentSegmentsRef = useRef<LocalClipSegment[]>([]);
   const pendingTrailingEvidenceRef = useRef<PendingTrailingEvidence[]>([]);
   const evidenceUploadBlockedRef = useRef(false);
+
+  useEffect(() => {
+    selectedOptionsRef.current = selectedOptions;
+  }, [selectedOptions]);
+
+  useEffect(() => {
+    sessionDataRef.current = sessionData;
+  }, [sessionData]);
 
   const uploadSegmentIfNeeded = useCallback(async (segment: LocalClipSegment) => {
     if (segment.path) {
@@ -1400,6 +1500,7 @@ export default function ExamSessionScreen() {
         }
 
         if (result.hasSubmitted) {
+          void clearStoredAppExitMarker().catch(() => undefined);
           router.replace({
             pathname: '/(tabs)/results',
             params: { examId: result.examId },
@@ -1637,37 +1738,137 @@ export default function ExamSessionScreen() {
     }));
   };
 
+  const recordAppExitViolation = useCallback(
+    async ({
+      durationMs,
+      forcedSubmit,
+      returnedAtIso,
+      startedAtIso,
+    }: {
+      durationMs: number;
+      forcedSubmit: boolean;
+      returnedAtIso: string;
+      startedAtIso: string;
+    }) => {
+      const handle = proctoringHandleRef.current;
+      const durationSeconds = Math.max(0.01, durationMs / 1000);
+      const maxScore = forcedSubmit ? 98 : 82;
+      const reason = forcedSubmit
+        ? `Student left the exam app for ${formatDurationSeconds(durationMs)}, exceeding the 10s auto-submit threshold. Exam was force-submitted.`
+        : `Student left the exam app for ${formatDurationSeconds(durationMs)}, exceeding the 5s app-exit warning threshold.`;
+
+      setProctoringMessage(reason);
+
+      if (!handle) {
+        return;
+      }
+
+      const evidence = buildSuspiciousEvidenceTemplate({
+        detectorSessionId: handle.aiSessionId,
+        durationSeconds,
+        eventDurationSeconds: durationSeconds,
+        eventEndOffsetSeconds: durationSeconds,
+        eventStartOffsetSeconds: 0,
+        requestedLeadSeconds: 0,
+        requestedTrailSeconds: 0,
+        severity: forcedSubmit ? 'critical' : 'high',
+        signalCode: forcedSubmit ? 'APP_EXIT_FORCE_SUBMIT' : 'APP_EXIT_OVER_5S',
+        wasTruncated: true,
+        windowEndIso: returnedAtIso,
+        windowStartIso: startedAtIso,
+      });
+
+      await insertSuspiciousEvent({
+        analysisSessionId: handle.analysisSessionId,
+        endFrameIndex: 0,
+        endTimestampSeconds: durationSeconds,
+        evidence,
+        examId: handle.examId,
+        frameCount: 1,
+        label: 'SUSPICIOUS',
+        maxScore,
+        reason,
+        riskLevel: forcedSubmit ? 'critical' : 'high',
+        source: 'app-state',
+        startFrameIndex: 0,
+        startTimestampSeconds: 0,
+        studentId: handle.studentId,
+      });
+
+      const nextMetrics = {
+        ...aggregateMetricsRef.current,
+        finalLabel: 'SUSPICIOUS' as const,
+        latestObservation: reason,
+        maxScore: Math.max(aggregateMetricsRef.current.maxScore, maxScore),
+        suspiciousEventCount: aggregateMetricsRef.current.suspiciousEventCount + 1,
+      };
+      aggregateMetricsRef.current = nextMetrics;
+
+      await syncAnalysisSessionMetrics({
+        analysisSessionId: handle.analysisSessionId,
+        backendSessionId: handle.aiSessionId,
+        metrics: nextMetrics,
+        status: 'active',
+      });
+    },
+    []
+  );
+
+  const submitCurrentAnswers = useCallback(
+    async (options: { forcedMessage?: string; throwOnError?: boolean } = {}) => {
+      const activeSession = sessionDataRef.current;
+
+      if (!activeSession || hasSubmittedRef.current) {
+        return;
+      }
+
+      setIsSubmitting(true);
+      setErrorMessage('');
+
+      if (options.forcedMessage) {
+        setShowConfirm(false);
+        setProctoringMessage(options.forcedMessage);
+      }
+
+      try {
+        await submitStudentExamAnswers({
+          answers: activeSession.questions.map((question) => ({
+            questionId: question.id,
+            selectedOptionId: selectedOptionsRef.current[question.id] ?? null,
+          })),
+          examIdInput: activeSession.examId,
+        });
+
+        hasSubmittedRef.current = true;
+        void clearStoredAppExitMarker().catch(() => undefined);
+        await finalizeProctoring('submitted');
+        setShowConfirm(false);
+        router.replace({
+          pathname: '/(tabs)/results',
+          params: { examId: activeSession.examId },
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unable to submit exam answers.';
+        setErrorMessage(message);
+        setShowConfirm(false);
+
+        if (options.throwOnError) {
+          throw error instanceof Error ? error : new Error(message);
+        }
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [finalizeProctoring]
+  );
+
   const handleSubmit = useCallback(async () => {
-    if (!sessionData) {
+    if (!sessionDataRef.current) {
       return;
     }
 
-    setIsSubmitting(true);
-    setErrorMessage('');
-
-    try {
-      await submitStudentExamAnswers({
-        answers: sessionData.questions.map((question) => ({
-          questionId: question.id,
-          selectedOptionId: selectedOptions[question.id] ?? null,
-        })),
-        examIdInput: sessionData.examId,
-      });
-
-      hasSubmittedRef.current = true;
-      await finalizeProctoring('submitted');
-      setShowConfirm(false);
-      router.replace({
-        pathname: '/(tabs)/results',
-        params: { examId: sessionData.examId },
-      });
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Unable to submit exam answers.');
-      setShowConfirm(false);
-    } finally {
-      setIsSubmitting(false);
-    }
-  }, [finalizeProctoring, selectedOptions, sessionData]);
+    await submitCurrentAnswers();
+  }, [submitCurrentAnswers]);
 
   useEffect(() => {
     if (!sessionData || isLoading || Boolean(errorMessage)) {
@@ -1685,8 +1886,191 @@ export default function ExamSessionScreen() {
     timeoutSubmitTriggeredRef.current = true;
     setShowConfirm(false);
     setProctoringMessage('Exam time is over. Submitting your answers...');
-    void handleSubmit();
-  }, [errorMessage, handleSubmit, isLoading, isSubmitting, remainingSeconds, sessionData]);
+    void submitCurrentAnswers({
+      forcedMessage: 'Exam time is over. Submitting your answers...',
+    });
+  }, [errorMessage, isLoading, isSubmitting, remainingSeconds, sessionData, submitCurrentAnswers]);
+
+  const processAppExitReturn = useCallback(
+    ({
+      durationMs,
+      returnedAtIso,
+      startedAtIso,
+    }: {
+      durationMs: number;
+      returnedAtIso: string;
+      startedAtIso: string;
+    }) => {
+      if (
+        durationMs < APP_EXIT_FLAG_THRESHOLD_MS ||
+        appExitHandlingRef.current ||
+        hasSubmittedRef.current
+      ) {
+        return;
+      }
+
+      appExitHandlingRef.current = true;
+      const shouldForceSubmit = durationMs >= APP_EXIT_FORCE_SUBMIT_THRESHOLD_MS;
+
+      void (async () => {
+        let violationError: unknown = null;
+
+        try {
+          await recordAppExitViolation({
+            durationMs,
+            forcedSubmit: shouldForceSubmit,
+            returnedAtIso,
+            startedAtIso,
+          });
+        } catch (error) {
+          violationError = error;
+        }
+
+        try {
+          if (shouldForceSubmit && !hasSubmittedRef.current) {
+            await submitCurrentAnswers({
+              forcedMessage: `Exam app was left for ${formatDurationSeconds(durationMs)}. Submitting your exam automatically.`,
+              throwOnError: true,
+            });
+          }
+        } catch (submitError) {
+          setProctoringStatus('error');
+          setProctoringMessage(
+            submitError instanceof Error
+              ? `Unable to auto-submit after app exit: ${submitError.message}`
+              : 'Unable to auto-submit after app exit.'
+          );
+          return;
+        } finally {
+          appExitHandlingRef.current = false;
+        }
+
+        if (violationError && !hasSubmittedRef.current) {
+          setProctoringStatus('error');
+          setProctoringMessage(
+            violationError instanceof Error
+              ? `Unable to record app-exit violation: ${violationError.message}`
+              : 'Unable to record app-exit violation.'
+          );
+        }
+      })();
+    },
+    [recordAppExitViolation, submitCurrentAnswers]
+  );
+
+  useEffect(() => {
+    if (!sessionData || hasSubmittedRef.current) {
+      return;
+    }
+
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => true);
+    return () => {
+      subscription.remove();
+    };
+  }, [sessionData]);
+
+  useEffect(() => {
+    if (!sessionData || isLoading || Boolean(errorMessage)) {
+      return;
+    }
+
+    const handleAppStateChange = (nextState: AppStateStatus) => {
+      const previousState = appStateRef.current;
+      appStateRef.current = nextState;
+
+      if (hasSubmittedRef.current) {
+        appExitStartedAtRef.current = null;
+        appExitStartedIsoRef.current = null;
+        return;
+      }
+
+      if (previousState === 'active' && nextState !== 'active') {
+        const startedAtMs = Date.now();
+        const startedAtIso = new Date(startedAtMs).toISOString();
+        appExitStartedAtRef.current = startedAtMs;
+        appExitStartedIsoRef.current = startedAtIso;
+        void writeStoredAppExitMarker({
+          examId: sessionData.examId,
+          startedAtIso,
+          startedAtMs,
+        }).catch(() => undefined);
+        return;
+      }
+
+      if (nextState !== 'active' || appExitStartedAtRef.current === null) {
+        return;
+      }
+
+      const startedAtMs = appExitStartedAtRef.current;
+      const startedAtIso = appExitStartedIsoRef.current ?? new Date(startedAtMs).toISOString();
+      const returnedAtIso = new Date().toISOString();
+      const durationMs = Math.max(0, Date.now() - startedAtMs);
+      appExitStartedAtRef.current = null;
+      appExitStartedIsoRef.current = null;
+
+      void clearStoredAppExitMarker().catch(() => undefined);
+      processAppExitReturn({
+        durationMs,
+        returnedAtIso,
+        startedAtIso,
+      });
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+
+    return () => {
+      subscription.remove();
+    };
+  }, [errorMessage, isLoading, processAppExitReturn, sessionData]);
+
+  useEffect(() => {
+    if (!sessionData || isLoading || Boolean(errorMessage) || hasSubmittedRef.current) {
+      return;
+    }
+
+    const activeHandle = proctoringHandleRef.current;
+    if (!activeHandle || activeHandle.examId !== sessionData.examId) {
+      return;
+    }
+
+    let isCancelled = false;
+
+    void (async () => {
+      const marker = await readStoredAppExitMarker();
+      if (isCancelled || !marker) {
+        return;
+      }
+
+      if (marker.examId !== sessionData.examId) {
+        await clearStoredAppExitMarker().catch(() => undefined);
+        return;
+      }
+
+      const durationMs = Math.max(0, Date.now() - marker.startedAtMs);
+      const returnedAtIso = new Date().toISOString();
+      await clearStoredAppExitMarker().catch(() => undefined);
+
+      if (isCancelled) {
+        return;
+      }
+
+      processAppExitReturn({
+        durationMs,
+        returnedAtIso,
+        startedAtIso: marker.startedAtIso,
+      });
+    })();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [
+    errorMessage,
+    isLoading,
+    processAppExitReturn,
+    proctoringHandleRevision,
+    sessionData,
+  ]);
 
   const aggregateMetrics = aggregateMetricsRef.current;
   const hasSampledFrames = aggregateMetrics.framesSampled > 0;
@@ -1775,9 +2159,6 @@ export default function ExamSessionScreen() {
     <SafeAreaView edges={['top']} style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.headerRow}>
-          <Pressable onPress={() => router.back()} style={styles.backButton}>
-            <Feather color={palette.mutedStrong} name="chevron-left" size={18} />
-          </Pressable>
           <Text numberOfLines={1} style={styles.headerMeta}>
             {examMeta}
           </Text>
@@ -1913,9 +2294,11 @@ export default function ExamSessionScreen() {
         {errorMessage ? (
           <View style={styles.errorCard}>
             <Text style={styles.errorText}>{errorMessage}</Text>
-            <Pressable onPress={() => router.replace('/(tabs)')} style={styles.errorAction}>
-              <Text style={styles.errorActionText}>Back to dashboard</Text>
-            </Pressable>
+            {!sessionData ? (
+              <Pressable onPress={() => router.replace('/(tabs)')} style={styles.errorAction}>
+                <Text style={styles.errorActionText}>Back to dashboard</Text>
+              </Pressable>
+            ) : null}
           </View>
         ) : null}
 
@@ -2053,16 +2436,6 @@ const styles = StyleSheet.create({
     color: palette.mutedStrong,
     fontSize: type.body,
     marginTop: 16,
-  },
-  backButton: {
-    alignItems: 'center',
-    backgroundColor: palette.panel,
-    borderColor: palette.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    height: 30,
-    justifyContent: 'center',
-    width: 30,
   },
   cameraPlaceholder: {
     alignItems: 'center',
@@ -2214,7 +2587,6 @@ const styles = StyleSheet.create({
     }),
     fontSize: type.body,
     letterSpacing: 0.8,
-    marginLeft: 10,
     marginRight: 12,
     textTransform: 'uppercase',
   },

@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -194,6 +195,7 @@ export default function InvigilatorMonitorScreen() {
   const [activeFilter, setActiveFilter] = useState<MonitorFilter>('all');
   const [isLoading, setIsLoading] = useState(true);
   const [isEventsLoading, setIsEventsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [suspiciousEvents, setSuspiciousEvents] = useState<InvigilatorSuspiciousEvent[]>([]);
   const [openEventId, setOpenEventId] = useState('');
@@ -246,6 +248,16 @@ export default function InvigilatorMonitorScreen() {
       return undefined;
     }, [loadAll])
   );
+
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+
+    try {
+      await loadAll(false);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [loadAll]);
 
   useEffect(() => {
     clipLocalUrisRef.current = clipLocalUris;
@@ -396,7 +408,18 @@ export default function InvigilatorMonitorScreen() {
 
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            colors={[palette.teal]}
+            onRefresh={handleRefresh}
+            progressBackgroundColor={palette.panel}
+            refreshing={isRefreshing}
+            tintColor={palette.teal}
+          />
+        }
+        showsVerticalScrollIndicator={false}>
         <View style={styles.headerRow}>
           <Pressable
             onPress={() => router.navigate('/(invigilator-tabs)')}

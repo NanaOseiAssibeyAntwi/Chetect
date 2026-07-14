@@ -156,6 +156,7 @@ export type InsertSuspiciousEventInput = {
   maxScore: number | null;
   reason: string;
   riskLevel: RiskLevel;
+  source?: string;
   startFrameIndex: number;
   startTimestampSeconds: number;
   studentId: string;
@@ -1305,7 +1306,7 @@ async function insertSuspiciousEventWithEvidence(
       max_score: payload.maxScore,
       reason: payload.reason,
       risk_level: payload.riskLevel,
-      source: 'ai-video',
+      source: payload.source ?? 'ai-video',
       start_frame_index: payload.startFrameIndex,
       start_timestamp_seconds: payload.startTimestampSeconds,
       student_id: payload.studentId,
@@ -1329,7 +1330,7 @@ async function insertSuspiciousEventWithEvidence(
       max_score: payload.maxScore,
       reason: payload.reason,
       risk_level: payload.riskLevel,
-      source: 'ai-video',
+      source: payload.source ?? 'ai-video',
       start_frame_index: payload.startFrameIndex,
       start_timestamp_seconds: payload.startTimestampSeconds,
       student_id: payload.studentId,

@@ -5,6 +5,7 @@ import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -33,10 +34,14 @@ function toInitials(name: string) {
 export default function DashboardScreen() {
   const [dashboardData, setDashboardData] = useState<StudentDashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  const loadDashboard = useCallback(async () => {
-    setIsLoading(true);
+  const loadDashboard = useCallback(async (options: { showLoader?: boolean } = {}) => {
+    const shouldShowLoader = options.showLoader ?? true;
+    if (shouldShowLoader) {
+      setIsLoading(true);
+    }
     setErrorMessage('');
 
     try {
@@ -45,9 +50,21 @@ export default function DashboardScreen() {
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Unable to load dashboard.');
     } finally {
-      setIsLoading(false);
+      if (shouldShowLoader) {
+        setIsLoading(false);
+      }
     }
   }, []);
+
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+
+    try {
+      await loadDashboard({ showLoader: false });
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [loadDashboard]);
 
   useFocusEffect(
     useCallback(() => {
@@ -74,7 +91,18 @@ export default function DashboardScreen() {
 
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            colors={[palette.teal]}
+            onRefresh={handleRefresh}
+            progressBackgroundColor={palette.panel}
+            refreshing={isRefreshing}
+            tintColor={palette.teal}
+          />
+        }
+        showsVerticalScrollIndicator={false}>
         <View style={styles.headerMetaRow}>
           <Text style={styles.studentId}>{studentId}</Text>
           <View style={styles.headerActions}>

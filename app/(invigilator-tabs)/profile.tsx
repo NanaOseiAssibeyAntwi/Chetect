@@ -17,7 +17,7 @@ import {
   fetchInvigilatorProfileData,
   type InvigilatorProfileData,
 } from '@/lib/invigilator-sessions';
-import { supabase } from '@/lib/supabase';
+import { useSession } from '@/providers/session-provider';
 
 function toInitials(name: string) {
   const initials = name
@@ -40,6 +40,7 @@ function formatStaffId(staffId: string | null) {
 }
 
 export default function InvigilatorProfileScreen() {
+  const { signOut } = useSession();
   const [profileData, setProfileData] = useState<InvigilatorProfileData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -113,11 +114,7 @@ export default function InvigilatorProfileScreen() {
     setIsSigningOut(true);
 
     try {
-      const { error } = await supabase.auth.signOut();
-      if (error) {
-        throw error;
-      }
-
+      await signOut();
       router.replace('/invigilator-sign-in');
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Unable to sign out. Please try again.');

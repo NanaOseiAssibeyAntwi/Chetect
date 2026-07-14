@@ -1,10 +1,11 @@
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { ComponentProps } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ComponentProps, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { layout, palette, radius, shadow, type } from '@/constants/design';
+import { useSession } from '@/providers/session-provider';
 
 type ProfileIconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
 
@@ -26,6 +27,20 @@ const privacyItems = [
 ] satisfies { icon: ProfileIconName; label: string; value: string }[];
 
 export default function ProfileScreen() {
+  const { signOut } = useSession();
+  const [isSigningOut, setIsSigningOut] = useState(false);
+
+  const handleSignOut = async () => {
+    setIsSigningOut(true);
+
+    try {
+      await signOut();
+      router.replace('/sign-in');
+    } finally {
+      setIsSigningOut(false);
+    }
+  };
+
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -97,8 +112,15 @@ export default function ProfileScreen() {
 
         <View style={styles.footerSpacer} />
 
-        <Pressable onPress={() => router.replace('/sign-in')} style={styles.signOutButton}>
-          <Feather color={palette.danger} name="log-out" size={15} />
+        <Pressable
+          disabled={isSigningOut}
+          onPress={handleSignOut}
+          style={[styles.signOutButton, isSigningOut ? styles.signOutButtonDisabled : null]}>
+          {isSigningOut ? (
+            <ActivityIndicator color={palette.danger} size="small" />
+          ) : (
+            <Feather color={palette.danger} name="log-out" size={15} />
+          )}
           <Text style={styles.signOutText}>Sign Out</Text>
         </Pressable>
       </ScrollView>
@@ -238,6 +260,9 @@ const styles = StyleSheet.create({
     gap: 10,
     justifyContent: 'center',
     paddingVertical: 14,
+  },
+  signOutButtonDisabled: {
+    opacity: 0.7,
   },
   signOutText: {
     color: palette.danger,
