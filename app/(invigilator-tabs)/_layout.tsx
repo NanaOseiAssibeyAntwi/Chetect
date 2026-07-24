@@ -15,21 +15,22 @@ export default function InvigilatorTabLayout() {
         tabBarButton: HapticTab,
         tabBarInactiveTintColor: palette.muted,
         tabBarItemStyle: {
-          paddingTop: layout.tabBarPaddingTop,
+          paddingBottom: 5,
+          paddingTop: 0,
         },
         tabBarLabelStyle: {
           fontSize: type.tiny,
           fontWeight: '700',
           letterSpacing: 0.4,
-          marginTop: 1,
+          marginTop: 0,
         },
         tabBarStyle: {
           backgroundColor: palette.panel,
           borderTopColor: palette.border,
           borderTopWidth: 1,
-          height: layout.tabBarHeight + 2,
-          paddingBottom: layout.tabBarPaddingBottom,
-          paddingTop: layout.tabBarPaddingTop + 1,
+          height: layout.tabBarHeight + 4,
+          paddingBottom: layout.tabBarPaddingBottom + 7,
+          paddingTop: 2,
         },
       }}>
       <Tabs.Screen

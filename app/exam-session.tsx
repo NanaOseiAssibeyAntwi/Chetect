@@ -1,4 +1,5 @@
 import { Feather } from '@expo/vector-icons';
+import { Audio } from 'expo-av';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as FileSystem from 'expo-file-system/legacy';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -50,8 +51,11 @@ import {
 } from '@/lib/student-exam';
 
 const EMPTY_QUESTIONS: StudentExamSessionData['questions'] = [];
+const BEEP_SOUND_ASSET = require('../assets/audio/beep.wav');
 const CLIP_SECONDS = 5;
 const CLIP_READY_MIN_BYTES = 6144;
+const DELAYED_DETECTOR_ALERT_COOLDOWN_MS = 4_000;
+const DELAYED_DETECTOR_ALERT_SOUND_MS = 1_800;
 const EVIDENCE_LEAD_SECONDS = 2;
 const EVIDENCE_TRAIL_SECONDS = 2;
 const SEGMENT_PRUNE_WINDOW_SECONDS = 32;
@@ -827,6 +831,166 @@ export default function ExamSessionScreen() {
   const recentSegmentsRef = useRef<LocalClipSegment[]>([]);
   const pendingTrailingEvidenceRef = useRef<PendingTrailingEvidence[]>([]);
   const evidenceUploadBlockedRef = useRef(false);
+  const liveSuspiciousAlarmRef = useRef<Audio.Sound | null>(null);
+  const liveSuspiciousAlarmLoadingRef = useRef(false);
+  const liveSuspiciousAlarmWantedRef = useRef(false);
+  const delayedAlertSoundsRef = useRef<Set<Audio.Sound>>(new Set());
+  const delayedAlertTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+  const lastDelayedAlertSoundAtRef = useRef(0);
+
+  const configureExamAudio = useCallback(async () => {
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+      playsInSilentModeIOS: true,
+      playThroughEarpieceAndroid: false,
+      shouldDuckAndroid: false,
+      staysActiveInBackground: true,
+    });
+  }, []);
+
+  const cleanupDelayedAlertSound = useCallback(async (sound: Audio.Sound) => {
+    if (!delayedAlertSoundsRef.current.delete(sound)) {
+      return;
+    }
+
+    try {
+      await sound.stopAsync();
+    } catch {
+      // Best effort: audio cleanup must not interrupt the exam.
+    }
+
+    try {
+      await sound.unloadAsync();
+    } catch {
+      // Best effort: audio cleanup must not interrupt the exam.
+    }
+  }, []);
+
+  const stopLiveSuspiciousAlarm = useCallback(() => {
+    liveSuspiciousAlarmWantedRef.current = false;
+    const sound = liveSuspiciousAlarmRef.current;
+    liveSuspiciousAlarmRef.current = null;
+
+    if (!sound) {
+      return;
+    }
+
+    void (async () => {
+      try {
+        await sound.stopAsync();
+      } catch {
+        // Best effort: audio cleanup must not interrupt the exam.
+      }
+
+      try {
+        await sound.unloadAsync();
+      } catch {
+        // Best effort: audio cleanup must not interrupt the exam.
+      }
+    })();
+  }, []);
+
+  const startLiveSuspiciousAlarm = useCallback(() => {
+    liveSuspiciousAlarmWantedRef.current = true;
+
+    if (liveSuspiciousAlarmRef.current || liveSuspiciousAlarmLoadingRef.current) {
+      return;
+    }
+
+    liveSuspiciousAlarmLoadingRef.current = true;
+
+    void (async () => {
+      const sound = new Audio.Sound();
+
+      try {
+        await configureExamAudio();
+        await sound.loadAsync(BEEP_SOUND_ASSET, {
+          isLooping: true,
+          shouldPlay: true,
+          volume: 1,
+        });
+
+        if (!liveSuspiciousAlarmWantedRef.current) {
+          await sound.unloadAsync();
+          return;
+        }
+
+        liveSuspiciousAlarmRef.current = sound;
+      } catch {
+        liveSuspiciousAlarmWantedRef.current = false;
+        try {
+          await sound.unloadAsync();
+        } catch {
+          // Best effort: audio cleanup must not interrupt the exam.
+        }
+      } finally {
+        liveSuspiciousAlarmLoadingRef.current = false;
+      }
+    })();
+  }, [configureExamAudio]);
+
+  const playDelayedSuspiciousAlertSound = useCallback(() => {
+    const now = Date.now();
+    if (now - lastDelayedAlertSoundAtRef.current < DELAYED_DETECTOR_ALERT_COOLDOWN_MS) {
+      return;
+    }
+
+    lastDelayedAlertSoundAtRef.current = now;
+
+    void (async () => {
+      try {
+        await configureExamAudio();
+        const { sound } = await Audio.Sound.createAsync(BEEP_SOUND_ASSET, {
+          isLooping: false,
+          shouldPlay: true,
+          volume: 0.85,
+        });
+
+        delayedAlertSoundsRef.current.add(sound);
+        sound.setOnPlaybackStatusUpdate((status) => {
+          if (status.isLoaded && status.didJustFinish) {
+            void cleanupDelayedAlertSound(sound);
+          }
+        });
+
+        const timer = setTimeout(() => {
+          delayedAlertTimersRef.current.delete(timer);
+          void cleanupDelayedAlertSound(sound);
+        }, DELAYED_DETECTOR_ALERT_SOUND_MS);
+        delayedAlertTimersRef.current.add(timer);
+      } catch {
+        // Best effort: failed alert audio should never block monitoring.
+      }
+    })();
+  }, [cleanupDelayedAlertSound, configureExamAudio]);
+
+  const stopAllSuspiciousSounds = useCallback(() => {
+    stopLiveSuspiciousAlarm();
+
+    for (const timer of delayedAlertTimersRef.current) {
+      clearTimeout(timer);
+    }
+    delayedAlertTimersRef.current.clear();
+
+    const delayedSounds = [...delayedAlertSoundsRef.current];
+    delayedAlertSoundsRef.current.clear();
+
+    for (const sound of delayedSounds) {
+      void (async () => {
+        try {
+          await sound.stopAsync();
+        } catch {
+          // Best effort: audio cleanup must not interrupt the exam.
+        }
+
+        try {
+          await sound.unloadAsync();
+        } catch {
+          // Best effort: audio cleanup must not interrupt the exam.
+        }
+      })();
+    }
+  }, [stopLiveSuspiciousAlarm]);
 
   useEffect(() => {
     selectedOptionsRef.current = selectedOptions;
@@ -1191,9 +1355,18 @@ export default function ExamSessionScreen() {
         includeAlertReasons: true,
         includeKeyFrameObservations: true,
       });
+      const hasDelayedDetectorSuspicion =
+        latestWindowFlaggedCount > 0 ||
+        latestWindowLabel === 'NO_FACE' ||
+        latestWindowLabel === 'CAUTION' ||
+        latestWindowLabel === 'SUSPICIOUS';
       setLatestWindowLabel(latestWindowLabel);
       setLatestWindowEventCount(latestWindowFlaggedCount);
       setLatestWindowObservation(latestWindowObservationSummary);
+
+      if (hasDelayedDetectorSuspicion) {
+        playDelayedSuspiciousAlertSound();
+      }
 
       registerRecentSegment(segment);
       let syncWarning = false;
@@ -1253,7 +1426,13 @@ export default function ExamSessionScreen() {
           : 'Live analysis running. No suspicious activity in the latest window.'
       );
     },
-    [persistSuspiciousEvents, registerRecentSegment, resolvePendingTrailingEvidence, sessionData]
+    [
+      persistSuspiciousEvents,
+      playDelayedSuspiciousAlertSound,
+      registerRecentSegment,
+      resolvePendingTrailingEvidence,
+      sessionData,
+    ]
   );
 
   const recordOneClip = useCallback(async (): Promise<LocalClipSegment | null> => {
@@ -1414,6 +1593,7 @@ export default function ExamSessionScreen() {
 
   const finalizeProctoring = useCallback(
     async (finalStatus: 'submitted' | 'paused' | 'terminated') => {
+      stopAllSuspiciousSounds();
       shouldMonitorRef.current = false;
 
       if (isRecordingRef.current) {
@@ -1465,7 +1645,7 @@ export default function ExamSessionScreen() {
         setProctoringMessage('Live analysis terminated.');
       }
     },
-    []
+    [stopAllSuspiciousSounds]
   );
 
   useEffect(() => {
@@ -1981,6 +2161,7 @@ export default function ExamSessionScreen() {
       if (hasSubmittedRef.current) {
         appExitStartedAtRef.current = null;
         appExitStartedIsoRef.current = null;
+        stopLiveSuspiciousAlarm();
         return;
       }
 
@@ -1989,12 +2170,17 @@ export default function ExamSessionScreen() {
         const startedAtIso = new Date(startedAtMs).toISOString();
         appExitStartedAtRef.current = startedAtMs;
         appExitStartedIsoRef.current = startedAtIso;
+        startLiveSuspiciousAlarm();
         void writeStoredAppExitMarker({
           examId: sessionData.examId,
           startedAtIso,
           startedAtMs,
         }).catch(() => undefined);
         return;
+      }
+
+      if (nextState === 'active') {
+        stopLiveSuspiciousAlarm();
       }
 
       if (nextState !== 'active' || appExitStartedAtRef.current === null) {
@@ -2021,7 +2207,14 @@ export default function ExamSessionScreen() {
     return () => {
       subscription.remove();
     };
-  }, [errorMessage, isLoading, processAppExitReturn, sessionData]);
+  }, [
+    errorMessage,
+    isLoading,
+    processAppExitReturn,
+    sessionData,
+    startLiveSuspiciousAlarm,
+    stopLiveSuspiciousAlarm,
+  ]);
 
   useEffect(() => {
     if (!sessionData || isLoading || Boolean(errorMessage) || hasSubmittedRef.current) {
