@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import 'react-native-reanimated';
 
 import { BootSplash } from '@/components/boot-splash';
+import { InvigilatorAlertToasts } from '@/components/invigilator-alert-toasts';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { SessionProvider, useSession } from '@/providers/session-provider';
 
@@ -79,6 +80,7 @@ function RootStack() {
             <Stack.Screen name="(tabs)" options={{ gestureEnabled: false }} />
             <Stack.Screen name="(invigilator-tabs)" options={{ gestureEnabled: false }} />
           </Stack>
+          <InvigilatorAlertToasts />
           <StatusBar backgroundColor={colors.background} style={isDark ? 'light' : 'dark'} />
         </>
       )}
