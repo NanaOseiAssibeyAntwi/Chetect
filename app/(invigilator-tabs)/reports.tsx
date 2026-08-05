@@ -1,256 +1,316 @@
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
+import { router } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { layout, palette, radius, shadow, type } from '@/constants/design';
+import { AppScreen } from '@/components/app-screen';
+import { ActionButton, AccentBadge, InlineMessage, MetricTile, SectionIntro, SurfaceCard } from '@/components/product-ui';
+import { layout, radius, type } from '@/constants/design';
+import { useAppTheme } from '@/hooks/use-app-theme';
+import {
+  fetchInvigilatorReports,
+  type InvigilatorReportSummaryItem,
+  type InvigilatorReportsData,
+} from '@/lib/invigilator-sessions';
 
-const summary = [
-  { label: 'SESSIONS', value: '12', valueColor: palette.warning },
-  { label: 'AVG TRUST', value: '91', valueColor: palette.success },
-  { label: 'FLAGS', value: '23', valueColor: palette.danger },
-] as const;
+function formatReportDate(isoDate: string) {
+  const parsedDate = new Date(isoDate);
+  if (Number.isNaN(parsedDate.getTime())) {
+    return 'Unknown date';
+  }
 
-const reports = [
-  {
-    course: 'Computer Networks',
-    date: '09 Jun 2025',
-    flags: '8 flagged',
-    integrity: '90',
-    status: 'Completed',
-  },
-  {
-    course: 'Data Structures',
-    date: '12 Jun 2025',
-    flags: '3 flagged',
-    integrity: '94',
-    status: 'Completed',
-  },
-  {
-    course: 'Algorithms',
-    date: '13 Jun 2025',
-    flags: '1 flagged',
-    integrity: '97',
-    status: 'Completed',
-  },
-] as const;
+  return parsedDate.toLocaleString(undefined, {
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+function getStatusTone(status: InvigilatorReportSummaryItem['status']) {
+  if (status === 'completed') {
+    return 'success' as const;
+  }
+
+  if (status === 'live') {
+    return 'danger' as const;
+  }
+
+  if (status === 'scheduled') {
+    return 'warning' as const;
+  }
+
+  return 'neutral' as const;
+}
 
 export default function InvigilatorReportsScreen() {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
+  const [reportsData, setReportsData] = useState<InvigilatorReportsData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  const loadReports = useCallback(async () => {
+    setIsLoading(true);
+    setErrorMessage('');
+
+    try {
+      const result = await fetchInvigilatorReports();
+      setReportsData(result);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to load reports.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadReports();
+      return undefined;
+    }, [loadReports])
+  );
+
+  const summary = useMemo(
+    () =>
+      [
+        { label: 'SESSIONS', value: String(reportsData?.stats.sessions ?? 0), valueColor: colors.warning },
+        { label: 'AVG TRUST', value: `${reportsData?.stats.averageTrust ?? 100}`, valueColor: colors.success },
+        { label: 'FLAGS', value: String(reportsData?.stats.flagged ?? 0), valueColor: colors.danger },
+      ] as const,
+    [colors, reportsData]
+  );
+
+  const reports = reportsData?.reports ?? [];
+
   return (
-    <SafeAreaView edges={['top']} style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Text style={styles.eyebrow}>SESSION REPORTS</Text>
-        <Text style={styles.title}>Exam Oversight Reports</Text>
-        <Text style={styles.subtitle}>
-          Review completed session summaries, integrity scores, and flagged incidents across active courses.
-        </Text>
+    <AppScreen accent="warning">
+      <SectionIntro
+        eyebrow="SESSION REPORTS"
+        subtitle="Review completed session summaries, integrity scores, and flagged incidents across active courses."
+        title="Exam Oversight Reports"
+      />
 
-        <View style={styles.summaryRow}>
-          {summary.map((item) => (
-            <View key={item.label} style={styles.summaryCard}>
-              <Text style={[styles.summaryValue, { color: item.valueColor }]}>{item.value}</Text>
-              <Text style={styles.summaryLabel}>{item.label}</Text>
-            </View>
-          ))}
+      <SurfaceCard style={styles.trustHero}>
+        <View style={styles.trustHeroIcon}>
+          <MaterialCommunityIcons color={colors.success} name="shield-check-outline" size={26} />
         </View>
-
-        <View style={styles.exportCard}>
-          <View>
-            <Text style={styles.exportTitle}>Weekly Export</Text>
-            <Text style={styles.exportCopy}>Generate CSV and PDF exports for audit review.</Text>
-          </View>
-          <View style={styles.exportButton}>
-            <Feather color="#ffffff" name="download" size={15} />
-            <Text style={styles.exportButtonText}>Export</Text>
-          </View>
+        <View style={styles.trustHeroText}>
+          <Text style={styles.trustHeroLabel}>OVERALL INTEGRITY SCORE</Text>
+          <Text style={styles.trustHeroValue}>{reportsData?.stats.averageTrust ?? 100}%</Text>
+          <Text style={styles.trustHeroCaption}>Average across completed sessions</Text>
         </View>
+      </SurfaceCard>
 
-        <View style={styles.list}>
-          {reports.map((report) => (
-            <View key={report.course} style={styles.reportCard}>
+      <View style={styles.summaryRow}>
+        {summary.map((item) => (
+          <MetricTile
+            accentColor={item.valueColor}
+            key={item.label}
+            label={item.label}
+            value={item.value}
+          />
+        ))}
+      </View>
+
+      {isLoading ? (
+        <SurfaceCard style={styles.loadingCard} tone="muted">
+          <ActivityIndicator color={colors.warning} size="small" />
+          <Text style={styles.loadingText}>Loading reports...</Text>
+        </SurfaceCard>
+      ) : null}
+
+      {errorMessage ? (
+        <InlineMessage
+          action={
+            <ActionButton
+              compact
+              fullWidth={false}
+              label="Retry"
+              onPress={() => void loadReports()}
+              tone="danger"
+            />
+          }
+          description={errorMessage}
+          style={styles.message}
+          tone="danger"
+        />
+      ) : null}
+
+      {!isLoading && !errorMessage && reports.length === 0 ? (
+        <InlineMessage
+          description="Completed course sessions with suspicious activity evidence will appear here."
+          style={styles.message}
+          title="No completed reports"
+          tone="neutral"
+        />
+      ) : null}
+
+      <View style={styles.list}>
+        {reports.map((report) => (
+          <Pressable
+            key={report.examId}
+            onPress={() =>
+              router.push({
+                pathname: '/(invigilator-tabs)/report-details',
+                params: { examId: report.examId },
+              })
+            }
+            style={({ pressed }) => [styles.reportPressable, pressed ? styles.reportPressed : null]}>
+            <SurfaceCard>
               <View style={styles.reportHeader}>
-                <View>
-                  <Text style={styles.reportCourse}>{report.course}</Text>
-                  <Text style={styles.reportDate}>{report.date}</Text>
+                <View style={styles.reportTitleBlock}>
+                  <Text style={styles.reportCourse}>{report.courseTitle}</Text>
+                  <Text style={styles.reportCode}>{report.courseCode}</Text>
+                  <Text style={styles.reportDate}>{formatReportDate(report.scheduledEnd)}</Text>
                 </View>
-                <View style={styles.statusBadge}>
-                  <Text style={styles.statusText}>{report.status}</Text>
+                <View style={styles.reportStatusBlock}>
+                  <AccentBadge label={report.status.toUpperCase()} tone={getStatusTone(report.status)} />
+                  <Feather color={colors.mutedStrong} name="chevron-right" size={18} />
                 </View>
               </View>
 
               <View style={styles.reportFooter}>
                 <View style={styles.reportMeta}>
-                  <MaterialCommunityIcons color={palette.warning} name="alert-outline" size={16} />
-                  <Text style={styles.flagsText}>{report.flags}</Text>
+                  <MaterialCommunityIcons color={colors.warning} name="alert-outline" size={16} />
+                  <Text style={styles.flagsText}>
+                    {report.suspiciousEventCount}{' '}
+                    {report.suspiciousEventCount === 1 ? 'activity' : 'activities'}
+                  </Text>
                 </View>
-                <Text style={styles.integrityText}>TRUST {report.integrity}</Text>
+                <Text style={styles.integrityText}>TRUST {report.integrityScore}</Text>
               </View>
-            </View>
-          ))}
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+            </SurfaceCard>
+          </Pressable>
+        ))}
+      </View>
+    </AppScreen>
   );
 }
 
-const styles = StyleSheet.create({
-  content: {
-    alignSelf: 'center',
-    maxWidth: layout.maxWidth,
-    paddingBottom: layout.bottomPadding,
-    paddingHorizontal: layout.screenPaddingWide,
-    width: '100%',
-  },
-  exportButton: {
-    alignItems: 'center',
-    backgroundColor: palette.teal,
-    borderRadius: radius.sm,
-    flexDirection: 'row',
-    gap: 8,
-    justifyContent: 'center',
-    minWidth: 96,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  exportButtonText: {
-    color: '#ffffff',
-    fontSize: type.body,
-    fontWeight: '800',
-  },
-  exportCard: {
-    alignItems: 'center',
-    backgroundColor: palette.panel,
-    borderColor: palette.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    ...shadow.card,
-  },
-  exportCopy: {
-    color: palette.mutedStrong,
-    fontSize: type.body,
-    marginTop: 6,
-  },
-  exportTitle: {
-    color: palette.text,
-    fontSize: type.title,
-    fontWeight: '700',
-  },
-  eyebrow: {
-    color: palette.mutedStrong,
-    fontSize: type.label,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-    marginTop: 4,
-    textTransform: 'uppercase',
-  },
-  flagsText: {
-    color: palette.warning,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  integrityText: {
-    color: palette.success,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  list: {
-    gap: 12,
-    marginTop: 18,
-  },
-  reportCard: {
-    backgroundColor: palette.panel,
-    borderColor: palette.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    ...shadow.card,
-  },
-  reportCourse: {
-    color: palette.text,
-    fontSize: type.title,
-    fontWeight: '700',
-  },
-  reportDate: {
-    color: palette.muted,
-    fontSize: 13,
-    marginTop: 8,
-  },
-  reportFooter: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 16,
-  },
-  reportHeader: {
-    alignItems: 'flex-start',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  reportMeta: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 6,
-  },
-  safeArea: {
-    backgroundColor: palette.background,
-    flex: 1,
-  },
-  statusBadge: {
-    backgroundColor: palette.warningSoft,
-    borderColor: '#fed7aa',
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  statusText: {
-    color: palette.warning,
-    fontSize: type.tiny,
-    fontWeight: '700',
-    letterSpacing: 1.1,
-  },
-  subtitle: {
-    color: palette.mutedStrong,
-    fontSize: type.bodyLarge,
-    lineHeight: 22,
-    marginTop: 12,
-  },
-  summaryCard: {
-    backgroundColor: palette.panel,
-    borderColor: palette.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flex: 1,
-    gap: 8,
-    minHeight: 68,
-    paddingHorizontal: 12,
-    paddingVertical: 11,
-    ...shadow.card,
-  },
-  summaryLabel: {
-    color: palette.mutedStrong,
-    fontSize: type.tiny,
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 20,
-  },
-  summaryValue: {
-    fontSize: type.display,
-    fontWeight: '800',
-  },
-  title: {
-    color: palette.text,
-    fontSize: type.display,
-    fontWeight: '800',
-    marginTop: 10,
-  },
-});
+function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
+  return StyleSheet.create({
+    flagsText: {
+      color: colors.warning,
+      fontSize: 13,
+      fontWeight: '700',
+    },
+    integrityText: {
+      color: colors.success,
+      fontSize: 13,
+      fontWeight: '700',
+    },
+    list: {
+      gap: 12,
+      marginTop: layout.sectionGap,
+    },
+    loadingCard: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 8,
+      marginTop: 14,
+    },
+    loadingText: {
+      color: colors.mutedStrong,
+      fontSize: type.body,
+    },
+    message: {
+      marginTop: 14,
+    },
+    reportCode: {
+      color: colors.muted,
+      fontSize: type.label,
+      fontWeight: '800',
+      letterSpacing: 0.5,
+      marginTop: 6,
+      textTransform: 'uppercase',
+    },
+    reportCourse: {
+      color: colors.text,
+      fontSize: type.title,
+      fontWeight: '700',
+    },
+    reportDate: {
+      color: colors.muted,
+      fontSize: 13,
+      marginTop: 8,
+    },
+    reportFooter: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginTop: 16,
+    },
+    reportHeader: {
+      alignItems: 'flex-start',
+      flexDirection: 'row',
+      gap: 12,
+      justifyContent: 'space-between',
+    },
+    reportMeta: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 6,
+    },
+    reportPressable: {
+      borderRadius: radius.md,
+    },
+    reportPressed: {
+      opacity: 0.9,
+      transform: [{ scale: 0.99 }],
+    },
+    reportStatusBlock: {
+      alignItems: 'flex-end',
+      gap: 12,
+    },
+    reportTitleBlock: {
+      flex: 1,
+    },
+    summaryRow: {
+      flexDirection: 'row',
+      gap: layout.cardGap,
+      marginTop: layout.sectionGap,
+    },
+    trustHero: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 16,
+      marginTop: layout.sectionGap,
+      paddingHorizontal: 20,
+      paddingVertical: 20,
+    },
+    trustHeroCaption: {
+      color: colors.mutedStrong,
+      fontSize: type.body,
+      marginTop: 4,
+    },
+    trustHeroIcon: {
+      alignItems: 'center',
+      backgroundColor: colors.successSoft,
+      borderColor: colors.border,
+      borderRadius: 999,
+      borderWidth: 1,
+      height: 52,
+      justifyContent: 'center',
+      width: 52,
+    },
+    trustHeroLabel: {
+      color: colors.mutedStrong,
+      fontSize: type.label,
+      fontWeight: '800',
+      letterSpacing: 1,
+    },
+    trustHeroText: {
+      flex: 1,
+    },
+    trustHeroValue: {
+      color: colors.text,
+      fontSize: type.display + 6,
+      fontWeight: '900',
+      marginTop: 2,
+    },
+  });
+}

@@ -15,7 +15,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { layout, palette, radius, shadow, type } from '@/constants/design';
+import { layout, radius, shadow, type } from '@/constants/design';
+import { ActionButton, InlineMessage, MetricTile } from '@/components/product-ui';
+import { useAppTheme } from '@/hooks/use-app-theme';
 import {
   fetchInvigilatorMonitorData,
   fetchInvigilatorSuspiciousEvents,
@@ -29,20 +31,20 @@ import { supabase } from '@/lib/supabase';
 const filters = ['all', 'flagged', 'critical'] as const;
 type MonitorFilter = (typeof filters)[number];
 
-function getRiskPresentation(riskLevel: MonitorRiskLevel) {
+function getRiskPresentation(riskLevel: MonitorRiskLevel, colors: ReturnType<typeof useAppTheme>['colors']) {
   if (riskLevel === 'critical') {
-    return { color: palette.danger, label: 'CRIT' };
+    return { color: colors.danger, label: 'CRIT' };
   }
 
   if (riskLevel === 'high') {
-    return { color: palette.danger, label: 'HIGH' };
+    return { color: colors.danger, label: 'HIGH' };
   }
 
   if (riskLevel === 'medium') {
-    return { color: palette.warning, label: 'MED' };
+    return { color: colors.warning, label: 'MED' };
   }
 
-  return { color: palette.success, label: 'LOW' };
+  return { color: colors.success, label: 'LOW' };
 }
 
 function getExamStatusLabel(status: InvigilatorMonitorData['examStatus']) {
@@ -61,20 +63,23 @@ function getExamStatusLabel(status: InvigilatorMonitorData['examStatus']) {
   return status.toUpperCase();
 }
 
-function getExamStatusColor(status: InvigilatorMonitorData['examStatus']) {
+function getExamStatusColor(
+  status: InvigilatorMonitorData['examStatus'],
+  colors: ReturnType<typeof useAppTheme>['colors']
+) {
   if (status === 'live') {
-    return palette.danger;
+    return colors.danger;
   }
 
   if (status === 'scheduled') {
-    return palette.warning;
+    return colors.warning;
   }
 
   if (status === 'completed') {
-    return palette.success;
+    return colors.success;
   }
 
-  return palette.muted;
+  return colors.muted;
 }
 
 function getFilterLabel(filter: MonitorFilter) {
@@ -186,6 +191,8 @@ function getSegmentRoleLabel(role: 'event' | 'context-before' | 'context-after' 
 }
 
 export default function InvigilatorMonitorScreen() {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const params = useLocalSearchParams<{ examId?: string | string[] }>();
   const examId = useMemo(
     () => (Array.isArray(params.examId) ? params.examId[0] : params.examId) ?? '',
@@ -404,7 +411,7 @@ export default function InvigilatorMonitorScreen() {
   );
 
   const statusLabel = monitorData ? getExamStatusLabel(monitorData.examStatus) : 'SESSION';
-  const statusColor = monitorData ? getExamStatusColor(monitorData.examStatus) : palette.muted;
+  const statusColor = monitorData ? getExamStatusColor(monitorData.examStatus, colors) : colors.muted;
 
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
@@ -412,67 +419,81 @@ export default function InvigilatorMonitorScreen() {
         contentContainerStyle={styles.content}
         refreshControl={
           <RefreshControl
-            colors={[palette.teal]}
+            colors={[colors.teal]}
             onRefresh={handleRefresh}
-            progressBackgroundColor={palette.panel}
+            progressBackgroundColor={colors.panel}
             refreshing={isRefreshing}
-            tintColor={palette.teal}
+            tintColor={colors.teal}
           />
         }
         showsVerticalScrollIndicator={false}>
+        <View style={styles.headerCard}>
         <View style={styles.headerRow}>
           <Pressable
             onPress={() => router.navigate('/(invigilator-tabs)')}
             style={styles.backButton}>
-            <Feather color={palette.mutedStrong} name="chevron-left" size={18} />
+            <Feather color={colors.mutedStrong} name="chevron-left" size={18} />
           </Pressable>
           <View style={styles.headerText}>
             <Text style={styles.courseCode}>{monitorData?.courseCode ?? 'COURSE'}</Text>
             <Text style={styles.courseTitle}>{monitorData?.title ?? 'Exam Session'}</Text>
           </View>
-          <View style={styles.liveWrap}>
+          <View style={[styles.liveWrap, { backgroundColor: `${statusColor}16`, borderColor: `${statusColor}40` }]}>
             <View style={[styles.liveDot, { backgroundColor: statusColor }]} />
             <Text style={[styles.liveText, { color: statusColor }]}>{statusLabel}</Text>
           </View>
         </View>
 
         <View style={styles.statsRow}>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>{monitorData?.stats.total ?? 0}</Text>
-            <Text style={styles.statLabel}>TOTAL</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={[styles.statValue, { color: palette.success }]}>
-              {monitorData?.stats.active ?? 0}
-            </Text>
-            <Text style={styles.statLabel}>ACTIVE</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={[styles.statValue, { color: palette.warning }]}>
-              {monitorData?.stats.flagged ?? 0}
-            </Text>
-            <Text style={styles.statLabel}>FLAGGED</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={[styles.statValue, { color: palette.mutedStrong }]}>{monitorData?.stats.done ?? 0}</Text>
-            <Text style={styles.statLabel}>DONE</Text>
-          </View>
+          <MetricTile
+            accentColor={colors.text}
+            label="Total"
+            style={styles.statTile}
+            value={String(monitorData?.stats.total ?? 0)}
+          />
+          <MetricTile
+            accentColor={colors.success}
+            label="Active"
+            style={styles.statTile}
+            value={String(monitorData?.stats.active ?? 0)}
+          />
+          <MetricTile
+            accentColor={colors.warning}
+            label="Flagged"
+            style={styles.statTile}
+            value={String(monitorData?.stats.flagged ?? 0)}
+          />
+          <MetricTile
+            accentColor={colors.mutedStrong}
+            label="Done"
+            style={styles.statTile}
+            value={String(monitorData?.stats.done ?? 0)}
+          />
+        </View>
         </View>
 
         {isLoading ? (
           <View style={styles.loadingCard}>
-            <ActivityIndicator color={palette.teal} size="small" />
+            <ActivityIndicator color={colors.teal} size="small" />
             <Text style={styles.loadingText}>Loading monitor feed...</Text>
           </View>
         ) : null}
 
         {errorMessage ? (
-          <View style={styles.errorCard}>
-            <Text style={styles.errorText}>{errorMessage}</Text>
-            <Pressable onPress={() => void loadAll(true)} style={styles.retryButton}>
-              <Text style={styles.retryButtonText}>Retry</Text>
-            </Pressable>
-          </View>
+          <InlineMessage
+            action={
+              <ActionButton
+                compact
+                fullWidth={false}
+                label="Retry"
+                onPress={() => void loadAll(true)}
+                tone="danger"
+              />
+            }
+            description={errorMessage}
+            style={styles.errorCard}
+            tone="danger"
+          />
         ) : null}
 
         <View style={styles.filterRow}>
@@ -483,29 +504,26 @@ export default function InvigilatorMonitorScreen() {
               <Pressable
                 key={filter}
                 onPress={() => setActiveFilter(filter)}
-                style={styles.filterItem}>
+                style={[styles.filterItem, active ? styles.filterItemActive : null]}>
                 <Text style={[styles.filterText, active ? styles.filterTextActive : null]}>
                   {getFilterLabel(filter)}
                 </Text>
-                <View
-                  style={[styles.filterUnderline, active ? styles.filterUnderlineActive : null]}
-                />
               </Pressable>
             );
           })}
         </View>
 
         {filteredStudents.length === 0 && !isLoading && !errorMessage ? (
-          <View style={styles.emptyCard}>
-            <Text style={styles.emptyTitle}>No students in this filter</Text>
-            <Text style={styles.emptyCopy}>
-              Try another filter or register students for this exam session.
-            </Text>
-          </View>
+          <InlineMessage
+            description="Try another filter or register students for this exam session."
+            style={styles.emptyCard}
+            title="No students in this filter"
+            tone="neutral"
+          />
         ) : (
           <View style={styles.grid}>
             {filteredStudents.map((student) => {
-              const risk = getRiskPresentation(student.riskLevel);
+              const risk = getRiskPresentation(student.riskLevel, colors);
               const flags = [
                 { label: 'G', state: student.indicators.gaze },
                 { label: 'F', state: student.indicators.face },
@@ -547,7 +565,7 @@ export default function InvigilatorMonitorScreen() {
 
                     <View style={styles.flagRow}>
                       {flags.map((flag) => {
-                        const chipColor = flag.state === 'alert' ? palette.danger : palette.success;
+                        const chipColor = flag.state === 'alert' ? colors.danger : colors.success;
 
                         return (
                           <View
@@ -578,23 +596,23 @@ export default function InvigilatorMonitorScreen() {
 
         {isEventsLoading ? (
           <View style={styles.loadingCard}>
-            <ActivityIndicator color={palette.warning} size="small" />
+            <ActivityIndicator color={colors.warning} size="small" />
             <Text style={styles.loadingText}>Loading suspicious recordings...</Text>
           </View>
         ) : null}
 
         {!isEventsLoading && suspiciousEvents.length === 0 ? (
-          <View style={styles.emptyCard}>
-            <Text style={styles.emptyTitle}>No suspicious clips yet</Text>
-            <Text style={styles.emptyCopy}>
-              When students are flagged, the event clip plus about 2 seconds before and after will appear here.
-            </Text>
-          </View>
+          <InlineMessage
+            description="When students are flagged, the event clip plus about 2 seconds before and after will appear here."
+            style={styles.emptyCard}
+            title="No suspicious clips yet"
+            tone="neutral"
+          />
         ) : (
           <View style={styles.eventsList}>
             {suspiciousEvents.map((eventRow) => {
               const isOpen = openEventId === eventRow.id;
-              const risk = getRiskPresentation(eventRow.riskLevel);
+              const risk = getRiskPresentation(eventRow.riskLevel, colors);
               const evidenceWindowLabel =
                 eventRow.windowStartIso && eventRow.windowEndIso
                   ? `${formatTimestamp(eventRow.windowStartIso)} - ${formatTimestamp(eventRow.windowEndIso)}`
@@ -746,445 +764,411 @@ export default function InvigilatorMonitorScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  backButton: {
-    alignItems: 'center',
-    height: 28,
-    justifyContent: 'center',
-    width: 28,
-  },
-  clipList: {
-    gap: 8,
-    marginTop: 10,
-  },
-  clipToggleButton: {
-    alignItems: 'center',
-    borderColor: palette.border,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    marginTop: 10,
-    paddingVertical: 10,
-  },
-  clipToggleText: {
-    color: palette.teal,
-    fontSize: type.body,
-    fontWeight: '700',
-  },
-  clipWaitingText: {
-    color: palette.mutedStrong,
-    fontSize: type.body,
-    marginTop: 6,
-  },
-  clipErrorText: {
-    color: palette.danger,
-    fontSize: type.body,
-    marginTop: 8,
-  },
-  content: {
-    alignSelf: 'center',
-    maxWidth: layout.maxWidth,
-    paddingBottom: layout.bottomPadding,
-    paddingHorizontal: layout.screenPaddingWide,
-    width: '100%',
-  },
-  courseCode: {
-    color: palette.muted,
-    fontSize: type.label,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-  },
-  courseTitle: {
-    color: palette.text,
-    fontSize: type.title,
-    fontWeight: '800',
-    marginTop: 6,
-  },
-  emptyCard: {
-    backgroundColor: palette.panel,
-    borderColor: palette.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    marginTop: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 16,
-  },
-  emptyCopy: {
-    color: palette.mutedStrong,
-    fontSize: type.body,
-    marginTop: 8,
-  },
-  emptyTitle: {
-    color: palette.text,
-    fontSize: type.bodyLarge,
-    fontWeight: '700',
-  },
-  errorCard: {
-    alignItems: 'flex-start',
-    backgroundColor: palette.dangerSoft,
-    borderColor: '#fecaca',
-    borderRadius: radius.md,
-    borderWidth: 1,
-    marginBottom: 8,
-    marginTop: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-  },
-  errorText: {
-    color: palette.danger,
-    fontSize: type.body,
-  },
-  eventCard: {
-    backgroundColor: palette.panel,
-    borderColor: palette.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    ...shadow.card,
-  },
-  eventHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  eventHeaderLeft: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 8,
-  },
-  alertDetailsRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 10,
-  },
-  alertDetailChip: {
-    backgroundColor: palette.panelSoft,
-    borderColor: palette.border,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    flex: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 7,
-  },
-  alertDetailLabel: {
-    color: palette.muted,
-    fontSize: 10,
-    letterSpacing: 0.9,
-  },
-  alertDetailValue: {
-    color: palette.text,
-    fontSize: type.tiny,
-    fontWeight: '700',
-    marginTop: 4,
-    textTransform: 'uppercase',
-  },
-  eventMeta: {
-    color: palette.muted,
-    fontSize: type.tiny,
-    letterSpacing: 0.4,
-    marginTop: 5,
-    textTransform: 'uppercase',
-  },
-  eventReason: {
-    color: palette.text,
-    fontSize: type.bodyLarge,
-    marginTop: 10,
-  },
-  eventStudent: {
-    color: palette.text,
-    fontSize: type.body,
-    fontWeight: '700',
-  },
-  eventTime: {
-    color: palette.muted,
-    fontSize: type.tiny,
-  },
-  eventsCount: {
-    color: palette.warning,
-    fontSize: type.body,
-    fontWeight: '700',
-  },
-  eventsHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-    marginTop: 20,
-  },
-  eventsList: {
-    gap: 10,
-  },
-  eventsTitle: {
-    color: palette.mutedStrong,
-    fontSize: type.label,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-  },
-  faceBox: {
-    alignItems: 'center',
-    backgroundColor: palette.panel,
-    borderColor: palette.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    height: 30,
-    justifyContent: 'center',
-    left: '38%',
-    position: 'absolute',
-    top: '38%',
-    width: 30,
-  },
-  faceInitials: {
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  filterItem: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  filterRow: {
-    borderBottomColor: palette.border,
-    borderBottomWidth: 1,
-    flexDirection: 'row',
-    marginBottom: 16,
-    marginTop: 6,
-  },
-  filterText: {
-    color: palette.muted,
-    fontSize: type.label,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-    paddingBottom: 12,
-  },
-  filterTextActive: {
-    color: palette.teal,
-    fontWeight: '700',
-  },
-  filterUnderline: {
-    backgroundColor: 'transparent',
-    height: 2,
-    width: '100%',
-  },
-  filterUnderlineActive: {
-    backgroundColor: palette.teal,
-  },
-  flagChip: {
-    alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: radius.xs,
-    height: 18,
-    justifyContent: 'center',
-    minWidth: 18,
-    paddingHorizontal: 5,
-  },
-  flagRow: {
-    flexDirection: 'row',
-    gap: 4,
-    marginTop: 12,
-  },
-  flagText: {
-    fontSize: 9,
-    fontWeight: '700',
-  },
-  grid: {
-    columnGap: 8,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    rowGap: 10,
-  },
-  headerRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 14,
-  },
-  headerText: {
-    flex: 1,
-    marginLeft: 6,
-  },
-  levelBadge: {
-    borderRadius: radius.xs,
-    borderWidth: 1,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-  },
-  levelText: {
-    fontSize: type.tiny,
-    fontWeight: '700',
-    letterSpacing: 0.8,
-  },
-  liveDot: {
-    borderRadius: 99,
-    height: 6,
-    width: 6,
-  },
-  liveText: {
-    fontSize: type.label,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  liveWrap: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 6,
-  },
-  loadingCard: {
-    alignItems: 'center',
-    backgroundColor: palette.panel,
-    borderColor: palette.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 8,
-    marginTop: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-  },
-  loadingText: {
-    color: palette.mutedStrong,
-    fontSize: type.body,
-  },
-  retryButton: {
-    borderColor: '#fecaca',
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    marginTop: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  retryButtonText: {
-    color: palette.danger,
-    fontSize: type.body,
-    fontWeight: '700',
-  },
-  riskBadge: {
-    borderWidth: 1,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    position: 'absolute',
-    right: 8,
-    top: 8,
-  },
-  riskText: {
-    fontSize: type.tiny,
-    fontWeight: '700',
-    letterSpacing: 0.8,
-  },
-  safeArea: {
-    backgroundColor: palette.background,
-    flex: 1,
-  },
-  scanBox: {
-    backgroundColor: palette.panelSoft,
-    borderTopLeftRadius: radius.md,
-    borderTopRightRadius: radius.md,
-    borderTopWidth: 2,
-    height: 120,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  scanGrid: {
-    borderColor: palette.border,
-    borderWidth: 1,
-    bottom: 10,
-    left: 10,
-    position: 'absolute',
-    right: 10,
-    top: 10,
-  },
-  score: {
-    bottom: 10,
-    fontSize: type.title,
-    fontWeight: '800',
-    position: 'absolute',
-    right: 10,
-  },
-  segmentCard: {
-    backgroundColor: palette.panelSoft,
-    borderColor: palette.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-  },
-  segmentMeta: {
-    color: palette.muted,
-    fontSize: type.tiny,
-    letterSpacing: 0.4,
-    marginBottom: 4,
-  },
-  segmentVideo: {
-    backgroundColor: '#111827',
-    borderRadius: radius.sm,
-    height: 176,
-    marginTop: 6,
-    width: '100%',
-  },
-  statCard: {
-    alignItems: 'center',
-    borderRightColor: palette.border,
-    borderRightWidth: 1,
-    flex: 1,
-    gap: 6,
-    justifyContent: 'center',
-    minHeight: 58,
-  },
-  statLabel: {
-    color: palette.muted,
-    fontSize: type.tiny,
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
-  },
-  statValue: {
-    color: palette.text,
-    fontSize: type.display,
-    fontWeight: '800',
-  },
-  statsRow: {
-    borderBottomColor: palette.border,
-    borderBottomWidth: 1,
-    borderTopColor: palette.border,
-    borderTopWidth: 1,
-    flexDirection: 'row',
-    marginBottom: 8,
-    paddingVertical: 10,
-  },
-  studentBody: {
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-  },
-  studentCard: {
-    backgroundColor: palette.panel,
-    borderColor: palette.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    width: '48.5%',
-    ...shadow.card,
-  },
-  studentId: {
-    color: palette.muted,
-    fontSize: 10,
-    marginTop: 4,
-  },
-  studentName: {
-    color: palette.text,
-    fontSize: type.bodyLarge,
-    fontWeight: '700',
-  },
-  studentStatus: {
-    color: palette.mutedStrong,
-    fontSize: type.tiny,
-    letterSpacing: 0.4,
-    marginTop: 6,
-    textTransform: 'uppercase',
-  },
-  studentObservation: {
-    color: palette.mutedStrong,
-    fontSize: type.tiny,
-    lineHeight: 16,
-    marginTop: 4,
-    minHeight: 32,
-  },
-});
+function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
+  return StyleSheet.create({
+    backButton: {
+      alignItems: 'center',
+      backgroundColor: colors.panel,
+      borderColor: colors.border,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      height: 34,
+      justifyContent: 'center',
+      width: 34,
+      ...shadow.card,
+    },
+    clipList: {
+      gap: 8,
+      marginTop: 10,
+    },
+    clipToggleButton: {
+      alignItems: 'center',
+      backgroundColor: colors.tealSoft,
+      borderColor: colors.tealGlow,
+      borderRadius: radius.sm,
+      borderWidth: 1.5,
+      marginTop: 10,
+      paddingVertical: 11,
+    },
+    clipToggleText: {
+      color: colors.teal,
+      fontSize: type.body,
+      fontWeight: '700',
+    },
+    clipWaitingText: {
+      color: colors.mutedStrong,
+      fontSize: type.body,
+      marginTop: 6,
+    },
+    clipErrorText: {
+      color: colors.danger,
+      fontSize: type.body,
+      marginTop: 8,
+    },
+    content: {
+      alignSelf: 'center',
+      maxWidth: layout.maxWidth,
+      paddingBottom: layout.bottomPadding,
+      paddingHorizontal: layout.screenPaddingWide,
+      width: '100%',
+    },
+    courseCode: {
+      color: colors.muted,
+      fontSize: type.label,
+      fontWeight: '700',
+      letterSpacing: 0.5,
+      textTransform: 'uppercase',
+    },
+    courseTitle: {
+      color: colors.text,
+      fontSize: type.title,
+      fontWeight: '800',
+      marginTop: 6,
+    },
+    emptyCard: {
+      marginTop: 8,
+    },
+    errorCard: {
+      marginBottom: 8,
+      marginTop: 10,
+    },
+    eventCard: {
+      backgroundColor: colors.panel,
+      borderColor: colors.border,
+      borderRadius: radius.lg,
+      borderWidth: 1,
+      paddingHorizontal: 14,
+      paddingVertical: 14,
+      ...shadow.card,
+    },
+    eventHeader: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+    },
+    eventHeaderLeft: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 8,
+    },
+    alertDetailsRow: {
+      flexDirection: 'row',
+      gap: 8,
+      marginTop: 10,
+    },
+    alertDetailChip: {
+      backgroundColor: colors.panelSoft,
+      borderColor: colors.border,
+      borderRadius: radius.sm,
+      borderWidth: 1,
+      flex: 1,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+    },
+    alertDetailLabel: {
+      color: colors.muted,
+      fontSize: 10,
+      letterSpacing: 0.9,
+    },
+    alertDetailValue: {
+      color: colors.text,
+      fontSize: type.tiny,
+      fontWeight: '700',
+      marginTop: 4,
+      textTransform: 'uppercase',
+    },
+    eventMeta: {
+      color: colors.muted,
+      fontSize: type.tiny,
+      letterSpacing: 0.4,
+      marginTop: 5,
+      textTransform: 'uppercase',
+    },
+    eventReason: {
+      color: colors.text,
+      fontSize: type.bodyLarge,
+      marginTop: 10,
+    },
+    eventStudent: {
+      color: colors.text,
+      fontSize: type.body,
+      fontWeight: '700',
+    },
+    eventTime: {
+      color: colors.muted,
+      fontSize: type.tiny,
+    },
+    eventsCount: {
+      color: colors.warning,
+      fontSize: type.body,
+      fontWeight: '700',
+    },
+    eventsHeader: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginBottom: 10,
+      marginTop: 20,
+    },
+    eventsList: {
+      gap: 10,
+    },
+    eventsTitle: {
+      color: colors.mutedStrong,
+      fontSize: type.label,
+      fontWeight: '700',
+      letterSpacing: 0.5,
+      textTransform: 'uppercase',
+    },
+    faceBox: {
+      alignItems: 'center',
+      backgroundColor: colors.panel,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      height: 30,
+      justifyContent: 'center',
+      left: '38%',
+      position: 'absolute',
+      top: '38%',
+      width: 30,
+    },
+    faceInitials: {
+      fontSize: 11,
+      fontWeight: '800',
+    },
+    filterItem: {
+      alignItems: 'center',
+      borderRadius: radius.pill,
+      flex: 1,
+      paddingVertical: 9,
+    },
+    filterItemActive: {
+      backgroundColor: colors.tealSoft,
+    },
+    filterRow: {
+      backgroundColor: colors.panelSoft,
+      borderColor: colors.border,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      flexDirection: 'row',
+      gap: 4,
+      marginBottom: 16,
+      marginTop: 6,
+      padding: 4,
+    },
+    filterText: {
+      color: colors.muted,
+      fontSize: type.label,
+      fontWeight: '700',
+      letterSpacing: 0.5,
+    },
+    filterTextActive: {
+      color: colors.teal,
+      fontWeight: '800',
+    },
+    flagChip: {
+      alignItems: 'center',
+      borderWidth: 1.5,
+      borderRadius: radius.pill,
+      height: 20,
+      justifyContent: 'center',
+      minWidth: 20,
+      paddingHorizontal: 5,
+    },
+    flagRow: {
+      flexDirection: 'row',
+      gap: 4,
+      marginTop: 12,
+    },
+    flagText: {
+      fontSize: 9,
+      fontWeight: '700',
+    },
+    grid: {
+      columnGap: 8,
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      rowGap: 10,
+    },
+    headerCard: {
+      backgroundColor: colors.panel,
+      borderColor: colors.border,
+      borderRadius: radius.lg,
+      borderWidth: 1,
+      marginBottom: 12,
+      padding: 12,
+      ...shadow.card,
+    },
+    headerRow: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginBottom: 14,
+    },
+    headerText: {
+      flex: 1,
+      marginLeft: 6,
+    },
+    levelBadge: {
+      borderRadius: radius.pill,
+      borderWidth: 1.5,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+    },
+    levelText: {
+      fontSize: type.tiny,
+      fontWeight: '800',
+      letterSpacing: 0.8,
+    },
+    liveDot: {
+      borderRadius: 99,
+      height: 6,
+      width: 6,
+    },
+    liveText: {
+      fontSize: type.label,
+      fontWeight: '700',
+      letterSpacing: 0.5,
+    },
+    liveWrap: {
+      alignItems: 'center',
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      flexDirection: 'row',
+      gap: 6,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+    },
+    loadingCard: {
+      alignItems: 'center',
+      backgroundColor: colors.panel,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      flexDirection: 'row',
+      gap: 8,
+      marginBottom: 8,
+      marginTop: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 12,
+      ...shadow.card,
+    },
+    loadingText: {
+      color: colors.mutedStrong,
+      fontSize: type.body,
+    },
+    riskBadge: {
+      borderRadius: radius.pill,
+      borderWidth: 1.5,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      position: 'absolute',
+      right: 8,
+      top: 8,
+    },
+    riskText: {
+      fontSize: type.tiny,
+      fontWeight: '800',
+      letterSpacing: 0.8,
+    },
+    safeArea: {
+      backgroundColor: colors.background,
+      flex: 1,
+    },
+    scanBox: {
+      backgroundColor: colors.panelSoft,
+      borderTopLeftRadius: radius.lg,
+      borderTopRightRadius: radius.lg,
+      borderTopWidth: 3,
+      height: 120,
+      overflow: 'hidden',
+      position: 'relative',
+    },
+    scanGrid: {
+      borderColor: colors.borderSoft,
+      borderRadius: radius.sm,
+      borderWidth: 1,
+      bottom: 10,
+      left: 10,
+      position: 'absolute',
+      right: 10,
+      top: 10,
+    },
+    score: {
+      bottom: 10,
+      fontSize: type.title,
+      fontWeight: '800',
+      position: 'absolute',
+      right: 10,
+    },
+    segmentCard: {
+      backgroundColor: colors.panelSoft,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      paddingHorizontal: 10,
+      paddingVertical: 10,
+    },
+    segmentMeta: {
+      color: colors.muted,
+      fontSize: type.tiny,
+      letterSpacing: 0.4,
+      marginBottom: 4,
+    },
+    segmentVideo: {
+      backgroundColor: colors.text,
+      borderRadius: radius.sm,
+      height: 176,
+      marginTop: 6,
+      width: '100%',
+    },
+    statTile: {
+      minHeight: 72,
+      paddingHorizontal: 10,
+      paddingVertical: 10,
+    },
+    statsRow: {
+      flexDirection: 'row',
+      gap: 8,
+      marginBottom: 12,
+    },
+    studentBody: {
+      paddingHorizontal: 10,
+      paddingVertical: 10,
+    },
+    studentCard: {
+      backgroundColor: colors.panel,
+      borderColor: colors.border,
+      borderRadius: radius.lg,
+      borderWidth: 1,
+      overflow: 'hidden',
+      width: '48.5%',
+      ...shadow.card,
+    },
+    studentId: {
+      color: colors.muted,
+      fontSize: 10,
+      marginTop: 4,
+    },
+    studentName: {
+      color: colors.text,
+      fontSize: type.bodyLarge,
+      fontWeight: '700',
+    },
+    studentStatus: {
+      color: colors.mutedStrong,
+      fontSize: type.tiny,
+      letterSpacing: 0.4,
+      marginTop: 6,
+      textTransform: 'uppercase',
+    },
+    studentObservation: {
+      color: colors.mutedStrong,
+      fontSize: type.tiny,
+      lineHeight: 16,
+      marginTop: 4,
+      minHeight: 32,
+    },
+  });
+}

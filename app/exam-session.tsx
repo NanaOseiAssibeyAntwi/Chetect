@@ -19,7 +19,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { layout, palette, radius, shadow, type } from '@/constants/design';
+import { layout, radius, shadow, type } from '@/constants/design';
+import { useAppTheme } from '@/hooks/use-app-theme';
 import {
   getNativeStoredItem,
   removeNativeStoredItem,
@@ -789,6 +790,8 @@ function isLikelyEvidenceUploadFailure(message: string) {
 export default function ExamSessionScreen() {
   const params = useLocalSearchParams<{ examId?: string }>();
   const examId = typeof params.examId === 'string' ? params.examId : '';
+
+  const { colors } = useAppTheme();
 
   const [sessionData, setSessionData] = useState<StudentExamSessionData | null>(null);
   const [selectedOptions, setSelectedOptions] = useState<Record<string, string>>({});
@@ -1910,6 +1913,7 @@ export default function ExamSessionScreen() {
   const currentQuestion = questions[questionIndex] ?? null;
   const progressPercent =
     totalQuestions > 0 ? Math.round(((questionIndex + 1) / totalQuestions) * 100) : 0;
+  const styles = useMemo(() => createStyles(colors), [colors]);
 
   const selectOption = (questionId: string, optionId: string) => {
     setSelectedOptions((current) => ({
@@ -2364,7 +2368,7 @@ export default function ExamSessionScreen() {
           <View style={styles.monitorCard}>
             <View style={[styles.monitorAlert, hasMonitoringAlert ? styles.monitorAlertWarning : null]}>
               <Feather
-                color={hasMonitoringAlert ? palette.warning : palette.success}
+                color={hasMonitoringAlert ? colors.warning : colors.success}
                 name={hasMonitoringAlert ? 'alert-triangle' : 'check-circle'}
                 size={14}
               />
@@ -2392,7 +2396,7 @@ export default function ExamSessionScreen() {
                     />
                   ) : (
                     <View style={styles.cameraPlaceholder}>
-                      <Feather color={palette.muted} name="camera-off" size={16} />
+                      <Feather color={colors.muted} name="camera-off" size={16} />
                     </View>
                   )}
                   <View pointerEvents="none" style={styles.gazeOuterTarget} />
@@ -2479,7 +2483,7 @@ export default function ExamSessionScreen() {
 
         {isLoading ? (
           <View style={styles.loadingCard}>
-            <ActivityIndicator color={palette.teal} size="small" />
+            <ActivityIndicator color={colors.teal} size="small" />
             <Text style={styles.loadingText}>Loading exam questions...</Text>
           </View>
         ) : null}
@@ -2605,7 +2609,7 @@ export default function ExamSessionScreen() {
               onPress={() => void handleSubmit()}
               style={[styles.modalPrimaryButton, isSubmitting ? styles.primaryButtonDisabled : null]}>
               {isSubmitting ? (
-                <ActivityIndicator color="#ffffff" size="small" />
+                <ActivityIndicator color={colors.background} size="small" />
               ) : (
                 <Text style={styles.modalPrimaryText}>Yes, submit</Text>
               )}
@@ -2624,9 +2628,10 @@ export default function ExamSessionScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
+  return StyleSheet.create({
   answerCounter: {
-    color: palette.mutedStrong,
+    color: colors.mutedStrong,
     fontSize: type.body,
     marginTop: 16,
   },
@@ -2641,7 +2646,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   choiceBox: {
-    borderColor: palette.borderStrong,
+    borderColor: colors.borderStrong,
     borderRadius: radius.pill,
     borderWidth: 1,
     height: 18,
@@ -2649,8 +2654,8 @@ const styles = StyleSheet.create({
     width: 18,
   },
   choiceBoxActive: {
-    backgroundColor: palette.teal,
-    borderColor: palette.teal,
+    backgroundColor: colors.teal,
+    borderColor: colors.teal,
   },
   content: {
     alignSelf: 'center',
@@ -2660,8 +2665,8 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   emptyQuestionState: {
-    backgroundColor: palette.panel,
-    borderColor: palette.border,
+    backgroundColor: colors.panel,
+    borderColor: colors.border,
     borderRadius: radius.md,
     borderWidth: 1,
     marginTop: 14,
@@ -2669,12 +2674,12 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
   },
   emptyQuestionText: {
-    color: palette.mutedStrong,
+    color: colors.mutedStrong,
     fontSize: type.body,
     lineHeight: 20,
   },
   errorAction: {
-    borderColor: '#fecaca',
+    borderColor: colors.borderStrong,
     borderRadius: radius.sm,
     borderWidth: 1,
     marginTop: 12,
@@ -2682,14 +2687,14 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   errorActionText: {
-    color: palette.danger,
+    color: colors.danger,
     fontSize: type.body,
     fontWeight: '700',
   },
   errorCard: {
     alignItems: 'flex-start',
-    backgroundColor: palette.dangerSoft,
-    borderColor: '#fecaca',
+    backgroundColor: colors.dangerSoft,
+    borderColor: colors.borderStrong,
     borderRadius: radius.md,
     borderWidth: 1,
     marginTop: 12,
@@ -2697,18 +2702,18 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   errorText: {
-    color: palette.danger,
+    color: colors.danger,
     fontSize: type.body,
   },
   flagCount: {
-    color: palette.muted,
+    color: colors.muted,
     fontSize: type.tiny,
     fontWeight: '700',
     marginLeft: 'auto',
   },
   gazeBackdrop: {
-    backgroundColor: palette.tealSoft,
-    borderColor: palette.border,
+    backgroundColor: colors.tealSoft,
+    borderColor: colors.border,
     borderRadius: radius.sm,
     borderWidth: 1,
     flex: 1,
@@ -2716,7 +2721,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   gazeCard: {
-    borderColor: palette.border,
+    borderColor: colors.border,
     borderRadius: radius.sm,
     borderWidth: 1,
     height: 88,
@@ -2724,7 +2729,7 @@ const styles = StyleSheet.create({
     width: 92,
   },
   gazeDot: {
-    backgroundColor: palette.danger,
+    backgroundColor: colors.danger,
     borderRadius: 99,
     height: 6,
     left: '16%',
@@ -2733,7 +2738,7 @@ const styles = StyleSheet.create({
     width: 6,
   },
   gazeInnerTarget: {
-    borderColor: palette.teal,
+    borderColor: colors.teal,
     borderWidth: 1,
     height: '40%',
     left: '31%',
@@ -2742,7 +2747,7 @@ const styles = StyleSheet.create({
     width: '40%',
   },
   gazeOuterTarget: {
-    borderColor: palette.teal,
+    borderColor: colors.teal,
     borderStyle: 'dashed',
     borderWidth: 1,
     height: '74%',
@@ -2753,8 +2758,8 @@ const styles = StyleSheet.create({
   },
   gazeTag: {
     alignItems: 'center',
-    backgroundColor: palette.successSoft,
-    borderColor: palette.success,
+    backgroundColor: colors.successSoft,
+    borderColor: colors.success,
     borderRadius: radius.xs,
     borderWidth: 1,
     bottom: 8,
@@ -2764,13 +2769,13 @@ const styles = StyleSheet.create({
     position: 'absolute',
   },
   gazeTagText: {
-    color: palette.success,
+    color: colors.success,
     fontSize: type.tiny,
     fontWeight: '700',
     letterSpacing: 0.5,
   },
   headerMeta: {
-    color: palette.mutedStrong,
+    color: colors.mutedStrong,
     flex: 1,
     fontFamily: Platform.select({
       android: 'monospace',
@@ -2791,8 +2796,8 @@ const styles = StyleSheet.create({
   },
   loadingCard: {
     alignItems: 'center',
-    backgroundColor: palette.panel,
-    borderColor: palette.border,
+    backgroundColor: colors.panel,
+    borderColor: colors.border,
     borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: 'row',
@@ -2803,15 +2808,15 @@ const styles = StyleSheet.create({
     ...shadow.card,
   },
   loadingText: {
-    color: palette.mutedStrong,
+    color: colors.mutedStrong,
     fontSize: type.body,
   },
   metricFill: {
-    backgroundColor: palette.teal,
+    backgroundColor: colors.teal,
     height: '100%',
   },
   metricLabel: {
-    color: palette.muted,
+    color: colors.muted,
     fontFamily: Platform.select({
       android: 'monospace',
       default: undefined,
@@ -2828,12 +2833,12 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   metricTrack: {
-    backgroundColor: palette.borderSoft,
+    backgroundColor: colors.borderSoft,
     flex: 1,
     height: 4,
   },
   metricValue: {
-    color: palette.teal,
+    color: colors.teal,
     fontSize: type.body,
     fontWeight: '700',
     textAlign: 'right',
@@ -2845,8 +2850,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   modalCard: {
-    backgroundColor: palette.panel,
-    borderColor: palette.border,
+    backgroundColor: colors.panel,
+    borderColor: colors.border,
     borderRadius: radius.md,
     borderWidth: 1,
     paddingHorizontal: 20,
@@ -2855,17 +2860,17 @@ const styles = StyleSheet.create({
     ...shadow.card,
   },
   modalCopy: {
-    color: palette.mutedStrong,
+    color: colors.mutedStrong,
     fontSize: type.bodyLarge,
     lineHeight: 22,
     marginTop: 10,
   },
   modalCopyStrong: {
-    color: palette.text,
+    color: colors.text,
     fontWeight: '800',
   },
   modalEyebrow: {
-    color: palette.danger,
+    color: colors.danger,
     fontSize: type.label,
     letterSpacing: 2,
   },
@@ -2877,39 +2882,39 @@ const styles = StyleSheet.create({
   },
   modalPrimaryButton: {
     alignItems: 'center',
-    backgroundColor: palette.teal,
-    borderColor: palette.teal,
+    backgroundColor: colors.teal,
+    borderColor: colors.teal,
     borderRadius: radius.md,
     borderWidth: 1,
     marginTop: 20,
     paddingVertical: 14,
   },
   modalPrimaryText: {
-    color: '#ffffff',
+    color: colors.background,
     fontSize: type.bodyLarge,
     fontWeight: '800',
   },
   modalSecondaryButton: {
     alignItems: 'center',
-    borderColor: palette.border,
+    borderColor: colors.border,
     borderRadius: radius.md,
     borderWidth: 1,
     marginTop: 8,
     paddingVertical: 14,
   },
   modalSecondaryText: {
-    color: palette.mutedStrong,
+    color: colors.mutedStrong,
     fontSize: type.bodyLarge,
   },
   modalTitle: {
-    color: palette.text,
+    color: colors.text,
     fontSize: type.display,
     fontWeight: '800',
     marginTop: 10,
   },
   monitorAlert: {
     alignItems: 'center',
-    borderBottomColor: palette.border,
+    borderBottomColor: colors.border,
     borderBottomWidth: 1,
     flexDirection: 'row',
     gap: 8,
@@ -2918,20 +2923,20 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   monitorAlertText: {
-    color: palette.mutedStrong,
+    color: colors.mutedStrong,
     flex: 1,
     fontSize: type.bodyLarge,
     fontWeight: '600',
   },
   monitorAlertTextWarning: {
-    color: palette.warning,
+    color: colors.warning,
   },
   monitorAlertWarning: {
-    backgroundColor: palette.warningSoft,
+    backgroundColor: colors.warningSoft,
   },
   monitorBadge: {
     alignItems: 'center',
-    borderColor: palette.border,
+    borderColor: colors.border,
     borderRadius: radius.sm,
     borderWidth: 1,
     minWidth: 88,
@@ -2939,8 +2944,8 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   monitorBadgeGood: {
-    backgroundColor: palette.successSoft,
-    borderColor: '#bbf7d0',
+    backgroundColor: colors.successSoft,
+    borderColor: colors.borderStrong,
   },
   monitorBadgeRow: {
     alignItems: 'center',
@@ -2949,35 +2954,35 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   monitorBadgeText: {
-    color: palette.warning,
+    color: colors.warning,
     fontSize: type.label,
     fontWeight: '800',
     letterSpacing: 0.6,
   },
   monitorBadgeTextGood: {
-    color: palette.success,
+    color: colors.success,
   },
   monitorBadgeTextPending: {
-    color: palette.mutedStrong,
+    color: colors.mutedStrong,
   },
   monitorBadgePending: {
-    backgroundColor: palette.panelSoft,
-    borderColor: palette.border,
+    backgroundColor: colors.panelSoft,
+    borderColor: colors.border,
   },
   monitorBadgeWarn: {
-    backgroundColor: palette.warningSoft,
-    borderColor: '#fed7aa',
+    backgroundColor: colors.warningSoft,
+    borderColor: colors.borderStrong,
   },
   monitorCard: {
-    backgroundColor: palette.panel,
-    borderColor: palette.border,
+    backgroundColor: colors.panel,
+    borderColor: colors.border,
     borderRadius: radius.md,
     borderWidth: 1,
     marginBottom: 14,
     ...shadow.card,
   },
   monitorHint: {
-    color: palette.mutedStrong,
+    color: colors.mutedStrong,
     fontSize: type.tiny,
     marginTop: 9,
     paddingBottom: 10,
@@ -2992,8 +2997,8 @@ const styles = StyleSheet.create({
   },
   navigationButton: {
     alignItems: 'center',
-    backgroundColor: palette.teal,
-    borderColor: palette.teal,
+    backgroundColor: colors.teal,
+    borderColor: colors.teal,
     borderRadius: radius.md,
     borderWidth: 1,
     flex: 1,
@@ -3005,19 +3010,19 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   navigationButtonSecondary: {
-    backgroundColor: palette.panel,
-    borderColor: palette.border,
+    backgroundColor: colors.panel,
+    borderColor: colors.border,
     flex: 0.46,
   },
   navigationButtonText: {
-    color: '#ffffff',
+    color: colors.background,
     fontSize: type.body,
     fontWeight: '800',
     letterSpacing: 0.7,
     textTransform: 'uppercase',
   },
   navigationButtonTextSecondary: {
-    color: palette.mutedStrong,
+    color: colors.mutedStrong,
     fontSize: type.body,
     fontWeight: '700',
     textTransform: 'uppercase',
@@ -3029,8 +3034,8 @@ const styles = StyleSheet.create({
   },
   optionCard: {
     alignItems: 'flex-start',
-    backgroundColor: palette.panel,
-    borderColor: palette.border,
+    backgroundColor: colors.panel,
+    borderColor: colors.border,
     borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: 'row',
@@ -3039,17 +3044,17 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   optionCardActive: {
-    backgroundColor: palette.tealSoft,
-    borderColor: palette.teal,
+    backgroundColor: colors.tealSoft,
+    borderColor: colors.teal,
   },
   optionKey: {
-    color: palette.muted,
+    color: colors.muted,
     fontSize: type.bodyLarge,
     fontWeight: '700',
     marginTop: 1,
   },
   optionText: {
-    color: palette.text,
+    color: colors.text,
     flex: 1,
     fontSize: type.bodyLarge,
     fontWeight: '600',
@@ -3061,7 +3066,7 @@ const styles = StyleSheet.create({
   },
   permissionButton: {
     alignItems: 'center',
-    borderColor: palette.border,
+    borderColor: colors.border,
     borderRadius: radius.sm,
     borderWidth: 1,
     marginHorizontal: 10,
@@ -3069,7 +3074,7 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
   },
   permissionButtonText: {
-    color: palette.teal,
+    color: colors.teal,
     fontSize: type.body,
     fontWeight: '700',
   },
@@ -3077,12 +3082,12 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   progressBar: {
-    backgroundColor: palette.borderSoft,
+    backgroundColor: colors.borderSoft,
     height: 2,
     marginTop: 8,
   },
   progressFill: {
-    backgroundColor: palette.teal,
+    backgroundColor: colors.teal,
     height: 2,
   },
   progressHeader: {
@@ -3091,7 +3096,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   progressLabel: {
-    color: palette.mutedStrong,
+    color: colors.mutedStrong,
     fontFamily: Platform.select({
       android: 'monospace',
       default: undefined,
@@ -3101,7 +3106,7 @@ const styles = StyleSheet.create({
     fontSize: type.body,
   },
   question: {
-    color: palette.text,
+    color: colors.text,
     fontSize: type.title,
     fontWeight: '700',
     lineHeight: 31,
@@ -3111,20 +3116,20 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   safeArea: {
-    backgroundColor: palette.background,
+    backgroundColor: colors.background,
     flex: 1,
   },
   submitButton: {
     alignItems: 'center',
-    backgroundColor: palette.teal,
-    borderColor: palette.teal,
+    backgroundColor: colors.teal,
+    borderColor: colors.teal,
     borderRadius: radius.md,
     borderWidth: 1,
     marginTop: 20,
     paddingVertical: 13,
   },
   submitText: {
-    color: '#ffffff',
+    color: colors.background,
     fontSize: type.bodyLarge,
     fontWeight: '800',
     letterSpacing: 1.6,
@@ -3132,8 +3137,8 @@ const styles = StyleSheet.create({
   },
   timerBox: {
     alignItems: 'center',
-    backgroundColor: palette.tealSoft,
-    borderColor: palette.border,
+    backgroundColor: colors.tealSoft,
+    borderColor: colors.border,
     borderRadius: radius.md,
     borderWidth: 1,
     justifyContent: 'center',
@@ -3142,7 +3147,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   timerText: {
-    color: palette.teal,
+    color: colors.teal,
     fontFamily: Platform.select({
       android: 'monospace',
       default: undefined,
@@ -3152,5 +3157,5 @@ const styles = StyleSheet.create({
     fontSize: type.bodyLarge,
     fontWeight: '800',
   },
-});
-
+  });
+}

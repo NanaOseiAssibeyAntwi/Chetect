@@ -2,7 +2,8 @@ import type { ReactNode } from 'react';
 import { ScrollView, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { SafeAreaView, type Edge } from 'react-native-safe-area-context';
 
-import { layout, palette } from '@/constants/design';
+import { layout } from '@/constants/design';
+import { useAppTheme } from '@/hooks/use-app-theme';
 
 type AppScreenProps = {
   accent?: 'neutral' | 'teal' | 'warning';
@@ -13,24 +14,16 @@ type AppScreenProps = {
 };
 
 export function AppScreen({
-  accent = 'neutral',
   children,
   contentContainerStyle,
   edges = ['top', 'bottom'],
   scroll = true,
 }: AppScreenProps) {
-  const accentLine =
-    accent === 'warning'
-      ? palette.warningSoft
-      : accent === 'teal'
-        ? palette.tealSoft
-        : palette.borderSoft;
+  const { colors } = useAppTheme();
 
   return (
-    <SafeAreaView edges={edges} style={styles.safeArea}>
-      <View pointerEvents="none" style={styles.backdrop}>
-        <View style={[styles.headerBand, { backgroundColor: accentLine }]} />
-      </View>
+    <SafeAreaView edges={edges} style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <View pointerEvents="none" style={[styles.topRule, { backgroundColor: colors.border }]} />
 
       {scroll ? (
         <ScrollView
@@ -47,10 +40,6 @@ export function AppScreen({
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    overflow: 'hidden',
-  },
   fixedContent: {
     alignSelf: 'center',
     flex: 1,
@@ -59,16 +48,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: layout.screenPaddingWide,
     width: '100%',
   },
-  headerBand: {
-    height: 96,
-    left: 0,
-    opacity: 0.32,
-    position: 'absolute',
-    right: 0,
-    top: 0,
-  },
   safeArea: {
-    backgroundColor: palette.background,
     flex: 1,
   },
   scrollContent: {
@@ -78,5 +58,13 @@ const styles = StyleSheet.create({
     paddingBottom: layout.bottomPadding,
     paddingHorizontal: layout.screenPaddingWide,
     width: '100%',
+  },
+  topRule: {
+    height: 1,
+    left: 0,
+    opacity: 0.8,
+    position: 'absolute',
+    right: 0,
+    top: 0,
   },
 });

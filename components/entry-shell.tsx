@@ -12,41 +12,43 @@ import {
 import { SafeAreaView, type Edge } from 'react-native-safe-area-context';
 
 import { BrandMark } from '@/components/brand-mark';
-import { font, layout, palette, radius, shadow, type } from '@/constants/design';
+import { font, layout, radius, type } from '@/constants/design';
+import { useAppTheme } from '@/hooks/use-app-theme';
 
 export type EntryAccent = 'teal' | 'warning';
 
-export const entryAccents: Record<
-  EntryAccent,
-  {
-    accent: string;
-    accentContrast: string;
-    border: string;
-    glow: string;
-    panel: string;
-    soft: string;
-    stripe: string;
-  }
-> = {
-  teal: {
-    accent: palette.teal,
-    accentContrast: '#ffffff',
-    border: palette.border,
-    glow: palette.tealSoft,
-    panel: palette.panel,
-    soft: palette.tealSoft,
-    stripe: palette.teal,
-  },
-  warning: {
-    accent: palette.warning,
-    accentContrast: '#ffffff',
-    border: palette.border,
-    glow: palette.warningSoft,
-    panel: palette.panel,
-    soft: palette.warningSoft,
-    stripe: palette.warning,
-  },
-};
+export function useEntryAccents() {
+  const { colors } = useAppTheme();
+
+  return {
+    teal: {
+      accent: colors.teal,
+      accentContrast: colors.background,
+      border: colors.border,
+      panel: colors.panel,
+      soft: colors.tealSoft,
+      stripe: colors.teal,
+    },
+    warning: {
+      accent: colors.warning,
+      accentContrast: colors.background,
+      border: colors.border,
+      panel: colors.panel,
+      soft: colors.warningSoft,
+      stripe: colors.warning,
+    },
+  } as const satisfies Record<
+    EntryAccent,
+    {
+      accent: string;
+      accentContrast: string;
+      border: string;
+      panel: string;
+      soft: string;
+      stripe: string;
+    }
+  >;
+}
 
 type EntryScreenProps = {
   accent?: EntryAccent;
@@ -85,24 +87,21 @@ type EntryMetricPillProps = {
   value: string;
 };
 
-function EntryBackdrop({ accent }: { accent: EntryAccent }) {
-  const tone = entryAccents[accent];
+function EntryBackdrop() {
+  const { colors } = useAppTheme();
 
-  return (
-    <View pointerEvents="none" style={styles.backdrop}>
-      <View style={[styles.headerBand, { backgroundColor: tone.glow }]} />
-    </View>
-  );
+  return <View pointerEvents="none" style={[styles.topRule, { backgroundColor: colors.border }]} />;
 }
 
 export function EntryScreen({
-  accent = 'teal',
   children,
   contentContainerStyle,
   edges = ['top', 'bottom'],
   keyboardAware = false,
   scroll = true,
 }: EntryScreenProps) {
+  const { colors } = useAppTheme();
+
   const content = scroll ? (
     <ScrollView
       contentContainerStyle={[styles.scrollContent, contentContainerStyle]}
@@ -115,9 +114,9 @@ export function EntryScreen({
   );
 
   return (
-    <SafeAreaView edges={edges} style={styles.safeArea}>
-      <View style={styles.shell}>
-        <EntryBackdrop accent={accent} />
+    <SafeAreaView edges={edges} style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <View style={[styles.shell, { backgroundColor: colors.background }]}>
+        <EntryBackdrop />
         <KeyboardAvoidingView
           behavior={keyboardAware ? Platform.select({ ios: 'padding', default: undefined }) : undefined}
           style={styles.flex}>
@@ -129,27 +128,26 @@ export function EntryScreen({
 }
 
 export function EntryPanel({ accent = 'teal', children, style }: EntryPanelProps) {
-  const tone = entryAccents[accent];
+  const tone = useEntryAccents()[accent];
 
   return (
     <View
       style={[
         styles.panel,
-        shadow.card,
         {
           backgroundColor: tone.panel,
           borderColor: tone.border,
         },
         style,
       ]}>
-      <View style={[styles.panelStripe, { backgroundColor: tone.stripe }]} />
       {children}
     </View>
   );
 }
 
 export function EntryBadge({ accent = 'teal', detail, label, style }: EntryBadgeProps) {
-  const tone = entryAccents[accent];
+  const { colors } = useAppTheme();
+  const tone = useEntryAccents()[accent];
 
   return (
     <View
@@ -163,7 +161,7 @@ export function EntryBadge({ accent = 'teal', detail, label, style }: EntryBadge
       ]}>
       <View style={[styles.badgeDot, { backgroundColor: tone.accent }]} />
       <Text style={[styles.badgeLabel, { color: tone.accent }]}>{label}</Text>
-      {detail ? <Text style={styles.badgeDetail}>{detail}</Text> : null}
+      {detail ? <Text style={[styles.badgeDetail, { color: colors.mutedStrong }]}>{detail}</Text> : null}
     </View>
   );
 }
@@ -175,16 +173,26 @@ export function EntryWordmark({
   subtitle,
   title = 'Chetect',
 }: EntryWordmarkProps) {
+  const { colors } = useAppTheme();
   const centered = align === 'center';
 
   return (
     <View style={[styles.wordmark, centered ? styles.wordmarkCentered : null]}>
       <BrandMark accent={accent} size={72} />
       <View style={styles.wordmarkText}>
-        {eyebrow ? <Text style={[styles.eyebrow, centered ? styles.centerText : null]}>{eyebrow}</Text> : null}
-        <Text style={[styles.wordmarkTitle, centered ? styles.centerText : null]}>{title}</Text>
+        {eyebrow ? (
+          <Text style={[styles.eyebrow, { color: colors.mutedStrong }, centered ? styles.centerText : null]}>
+            {eyebrow}
+          </Text>
+        ) : null}
+        <Text style={[styles.wordmarkTitle, { color: colors.text }, centered ? styles.centerText : null]}>
+          {title}
+        </Text>
         {subtitle ? (
-          <Text style={[styles.wordmarkSubtitle, centered ? styles.centerText : null]}>{subtitle}</Text>
+          <Text
+            style={[styles.wordmarkSubtitle, { color: colors.mutedStrong }, centered ? styles.centerText : null]}>
+            {subtitle}
+          </Text>
         ) : null}
       </View>
     </View>
@@ -192,7 +200,8 @@ export function EntryWordmark({
 }
 
 export function EntryMetricPill({ accent = 'teal', label, style, value }: EntryMetricPillProps) {
-  const tone = entryAccents[accent];
+  const { colors } = useAppTheme();
+  const tone = useEntryAccents()[accent];
 
   return (
     <View
@@ -205,16 +214,12 @@ export function EntryMetricPill({ accent = 'teal', label, style, value }: EntryM
         style,
       ]}>
       <Text style={[styles.metricValue, { color: tone.accent }]}>{value}</Text>
-      <Text style={styles.metricLabel}>{label}</Text>
+      <Text style={[styles.metricLabel, { color: colors.mutedStrong }]}>{label}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    overflow: 'hidden',
-  },
   badge: {
     alignItems: 'center',
     alignSelf: 'flex-start',
@@ -226,7 +231,6 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   badgeDetail: {
-    color: palette.mutedStrong,
     fontFamily: font.mono,
     fontSize: type.tiny,
     letterSpacing: 1.2,
@@ -243,17 +247,10 @@ const styles = StyleSheet.create({
     letterSpacing: 1.8,
     textTransform: 'uppercase',
   },
-  bottomGlow: {
-    display: 'none',
-  },
-  centerColumn: {
-    display: 'none',
-  },
   centerText: {
     textAlign: 'center',
   },
   eyebrow: {
-    color: palette.mutedStrong,
     fontFamily: font.mono,
     fontSize: type.tiny,
     fontWeight: '800',
@@ -272,25 +269,7 @@ const styles = StyleSheet.create({
   flex: {
     flex: 1,
   },
-  frame: {
-    display: 'none',
-  },
-  gridColumn: {
-    display: 'none',
-  },
-  gridColumns: {
-    display: 'none',
-  },
-  headerBand: {
-    height: 120,
-    left: 0,
-    opacity: 0.58,
-    position: 'absolute',
-    right: 0,
-    top: 0,
-  },
   metricLabel: {
-    color: palette.mutedStrong,
     fontFamily: font.mono,
     fontSize: type.tiny,
     fontWeight: '700',
@@ -311,18 +290,6 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 0,
   },
-  orbitRingLarge: {
-    display: 'none',
-  },
-  orbitRingSmall: {
-    display: 'none',
-  },
-  outerRail: {
-    display: 'none',
-  },
-  outerRails: {
-    display: 'none',
-  },
   panel: {
     borderRadius: radius.md,
     borderWidth: 1,
@@ -331,19 +298,7 @@ const styles = StyleSheet.create({
     paddingVertical: 18,
     position: 'relative',
   },
-  panelStripe: {
-    height: 1,
-    left: 18,
-    opacity: 0.9,
-    position: 'absolute',
-    right: 18,
-    top: 0,
-  },
-  rightGlow: {
-    display: 'none',
-  },
   safeArea: {
-    backgroundColor: palette.background,
     flex: 1,
   },
   scrollContent: {
@@ -355,17 +310,15 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   shell: {
-    backgroundColor: palette.background,
     flex: 1,
   },
-  topGlow: {
-    display: 'none',
-  },
-  upperRail: {
-    display: 'none',
-  },
-  midRail: {
-    display: 'none',
+  topRule: {
+    height: 1,
+    left: 0,
+    opacity: 0.8,
+    position: 'absolute',
+    right: 0,
+    top: 0,
   },
   wordmark: {
     gap: 20,
@@ -374,7 +327,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   wordmarkSubtitle: {
-    color: palette.mutedStrong,
     fontFamily: font.body,
     fontSize: type.bodyLarge,
     lineHeight: 24,
@@ -384,7 +336,6 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   wordmarkTitle: {
-    color: palette.text,
     fontFamily: font.display,
     fontSize: type.hero,
     fontWeight: '900',

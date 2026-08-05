@@ -13,23 +13,25 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { layout, palette, radius, shadow, type } from '@/constants/design';
+import { ActionButton, AccentBadge, InlineMessage, MetricTile, SurfaceCard } from '@/components/product-ui';
+import { layout, radius, type } from '@/constants/design';
+import { useAppTheme } from '@/hooks/use-app-theme';
 import {
   fetchInvigilatorDashboardData,
   type InvigilatorDashboardData,
   type SessionRiskLevel,
 } from '@/lib/invigilator-sessions';
 
-function riskLevelPresentation(riskLevel: SessionRiskLevel) {
+function riskLevelPresentation(riskLevel: SessionRiskLevel, colors: ReturnType<typeof useAppTheme>['colors']) {
   if (riskLevel === 'high') {
-    return { color: palette.danger, label: 'HIGH' };
+    return { color: colors.danger, label: 'HIGH', tone: 'danger' as const };
   }
 
   if (riskLevel === 'medium') {
-    return { color: palette.warning, label: 'MED' };
+    return { color: colors.warning, label: 'MED', tone: 'warning' as const };
   }
 
-  return { color: palette.success, label: 'LOW' };
+  return { color: colors.success, label: 'LOW', tone: 'success' as const };
 }
 
 function formatSessionStart(isoDate: string) {
@@ -47,6 +49,9 @@ function formatSessionStart(isoDate: string) {
 }
 
 export default function InvigilatorDashboardScreen() {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const [dashboardData, setDashboardData] = useState<InvigilatorDashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -95,25 +100,25 @@ export default function InvigilatorDashboardScreen() {
       {
         label: 'SESSIONS',
         value: String(dashboardData?.stats.totalSessions ?? 0),
-        valueColor: palette.teal,
+        valueColor: colors.teal,
       },
       {
         label: 'ONLINE',
         value: String(dashboardData?.stats.online ?? 0),
-        valueColor: palette.success,
+        valueColor: colors.success,
       },
       {
         label: 'FLAGGED',
         value: String(dashboardData?.stats.flagged ?? 0),
-        valueColor: palette.warning,
+        valueColor: colors.warning,
       },
       {
         label: 'DONE',
         value: String(dashboardData?.stats.done ?? 0),
-        valueColor: palette.mutedStrong,
+        valueColor: colors.mutedStrong,
       },
     ],
-    [dashboardData]
+    [dashboardData, colors]
   );
 
   const sessions = dashboardData?.sessions ?? [];
@@ -122,6 +127,7 @@ export default function InvigilatorDashboardScreen() {
     ? `${dashboardData.staffInstitutionalId.toUpperCase()} - L2`
     : 'INVIGILATOR - L2';
   const activeSessionsCount = dashboardData?.stats.active ?? 0;
+  const flaggedCount = dashboardData?.stats.flagged ?? 0;
 
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
@@ -129,24 +135,30 @@ export default function InvigilatorDashboardScreen() {
         contentContainerStyle={styles.content}
         refreshControl={
           <RefreshControl
-            colors={[palette.teal]}
+            colors={[colors.warning]}
             onRefresh={handleRefresh}
-            progressBackgroundColor={palette.panel}
+            progressBackgroundColor={colors.panel}
             refreshing={isRefreshing}
-            tintColor={palette.teal}
+            tintColor={colors.warning}
           />
         }
         showsVerticalScrollIndicator={false}>
         <View style={styles.headerMetaRow}>
           <Text style={styles.staffMeta}>{staffMeta}</Text>
           <View style={styles.headerActions}>
-            <View style={styles.bellWrap}>
-              <Ionicons color={palette.mutedStrong} name="notifications-outline" size={18} />
+            <Pressable
+              hitSlop={10}
+              onPress={() => router.push('/(invigilator-tabs)/notifications')}
+              style={({ pressed }) => [styles.bellWrap, pressed ? styles.headerActionPressed : null]}>
+              <Ionicons color={colors.mutedStrong} name="notifications-outline" size={18} />
               <View style={styles.alertCount}>
-                <Text style={styles.alertCountText}>{dashboardData?.stats.flagged ?? 0}</Text>
+                <Text style={styles.alertCountText}>{flaggedCount}</Text>
               </View>
-            </View>
-            <View style={styles.avatarBox}>
+            </Pressable>
+            <Pressable
+              hitSlop={10}
+              onPress={() => router.push('/(invigilator-tabs)/profile')}
+              style={({ pressed }) => [styles.avatarBox, pressed ? styles.headerActionPressed : null]}>
               <Text style={styles.avatarText}>
                 {staffName
                   .split(' ')
@@ -155,35 +167,58 @@ export default function InvigilatorDashboardScreen() {
                   .slice(0, 2)
                   .toUpperCase()}
               </Text>
-            </View>
+            </Pressable>
           </View>
         </View>
 
         <Text style={styles.staffName}>{staffName}</Text>
 
+        <View style={styles.heroStatCard}>
+          <View style={styles.heroStatTextBlock}>
+            <Text style={styles.heroStatLabel}>ACTIVE RIGHT NOW</Text>
+            <Text style={styles.heroStatValue}>{activeSessionsCount}</Text>
+            <Text style={styles.heroStatCaption}>
+              {activeSessionsCount === 1 ? 'session' : 'sessions'} currently being monitored
+            </Text>
+          </View>
+          <View style={styles.heroStatIcon}>
+            <Feather color={colors.warning} name="activity" size={26} />
+          </View>
+        </View>
+
         <View style={styles.metricRow}>
           {metrics.map((metric) => (
-            <View key={metric.label} style={styles.metricCard}>
-              <Text style={[styles.metricValue, { color: metric.valueColor }]}>{metric.value}</Text>
-              <Text style={styles.metricLabel}>{metric.label}</Text>
-            </View>
+            <MetricTile
+              accentColor={metric.valueColor}
+              key={metric.label}
+              label={metric.label}
+              value={metric.value}
+            />
           ))}
         </View>
 
         {isLoading ? (
           <View style={styles.loadingCard}>
-            <ActivityIndicator color={palette.teal} size="small" />
+            <ActivityIndicator color={colors.warning} size="small" />
             <Text style={styles.loadingText}>Loading sessions...</Text>
           </View>
         ) : null}
 
         {errorMessage ? (
-          <View style={styles.errorCard}>
-            <Text style={styles.errorText}>{errorMessage}</Text>
-            <Pressable onPress={() => void loadDashboard()} style={styles.retryButton}>
-              <Text style={styles.retryButtonText}>Retry</Text>
-            </Pressable>
-          </View>
+          <InlineMessage
+            action={
+              <ActionButton
+                compact
+                fullWidth={false}
+                label="Retry"
+                onPress={() => void loadDashboard()}
+                tone="danger"
+              />
+            }
+            description={errorMessage}
+            style={styles.errorMessage}
+            tone="danger"
+          />
         ) : null}
 
         <View style={styles.sectionHeader}>
@@ -196,7 +231,7 @@ export default function InvigilatorDashboardScreen() {
             <Pressable
               onPress={() => router.push('/(invigilator-tabs)/create')}
               style={styles.createButton}>
-              <Feather color={palette.warning} name="plus" size={13} />
+              <Feather color={colors.warning} name="plus" size={13} />
               <Text style={styles.createButtonText}>Create</Text>
             </Pressable>
           </View>
@@ -204,36 +239,26 @@ export default function InvigilatorDashboardScreen() {
 
         <View style={styles.cardList}>
           {sessions.length === 0 ? (
-            <View style={styles.emptyCard}>
+            <SurfaceCard>
               <Text style={styles.emptyTitle}>No active sessions yet</Text>
               <Text style={styles.emptyCopy}>
                 Create your first exam session to populate this live dashboard.
               </Text>
-            </View>
+            </SurfaceCard>
           ) : (
             sessions.map((session) => {
-              const riskPresentation = riskLevelPresentation(session.riskLevel);
+              const riskPresentation = riskLevelPresentation(session.riskLevel, colors);
 
               return (
-                <View
+                <SurfaceCard
+                  accentColor={riskPresentation.color}
                   key={session.examId}
-                  style={[styles.sessionCard, { borderLeftColor: riskPresentation.color }]}>
+                  style={styles.sessionCard}>
                   <View style={styles.sessionHeader}>
                     <View style={styles.sessionTitleBlock}>
                       <View style={styles.sessionMetaRow}>
                         <Text style={styles.sessionCode}>{session.code}</Text>
-                        <View
-                          style={[
-                            styles.levelBadge,
-                            {
-                              backgroundColor: `${riskPresentation.color}20`,
-                              borderColor: `${riskPresentation.color}55`,
-                            },
-                          ]}>
-                          <Text style={[styles.levelText, { color: riskPresentation.color }]}>
-                            {riskPresentation.label}
-                          </Text>
-                        </View>
+                        <AccentBadge label={riskPresentation.label} tone={riskPresentation.tone} />
                       </View>
                       <Text style={styles.sessionTitle}>{session.title}</Text>
                     </View>
@@ -246,7 +271,7 @@ export default function InvigilatorDashboardScreen() {
                       }
                       style={styles.monitorButton}>
                       <Text style={styles.monitorText}>Monitor</Text>
-                      <Feather color={palette.teal} name="arrow-right" size={14} />
+                      <Feather color={colors.teal} name="arrow-right" size={14} />
                     </Pressable>
                   </View>
 
@@ -257,10 +282,10 @@ export default function InvigilatorDashboardScreen() {
                     <Text style={styles.sessionFlags}>   {session.flaggedSessions} flagged</Text>
                   </Text>
                   <Text style={styles.sessionTimeMeta}>
-                    {formatSessionStart(session.scheduledStart)}   {session.monitoringMode.toUpperCase()}   
+                    {formatSessionStart(session.scheduledStart)}   {session.monitoringMode.toUpperCase()}
                     {session.status.toUpperCase()}
                   </Text>
-                </View>
+                </SurfaceCard>
               );
             })
           )}
@@ -269,359 +294,288 @@ export default function InvigilatorDashboardScreen() {
         <Text style={[styles.sectionLabel, styles.alertsHeader]}>RECENT ALERTS</Text>
 
         <View style={styles.cardList}>
-          <View style={styles.alertCard}>
-            <View style={styles.alertLead}>
-              <View
-                style={[
-                  styles.alertMarker,
-                  {
-                    backgroundColor:
-                      (dashboardData?.stats.flagged ?? 0) > 0 ? palette.warning : palette.success,
-                  },
-                ]}
-              />
-              <View>
-                <Text style={styles.alertName}>Alert stream</Text>
-                <Text style={styles.alertText}>
-                  {(dashboardData?.stats.flagged ?? 0) > 0
-                    ? 'Flagged sessions are detected in live monitoring.'
-                    : 'No flagged activity yet. New alerts will appear here.'}
-                </Text>
-              </View>
-            </View>
-          </View>
+          <InlineMessage
+            description={
+              flaggedCount > 0
+                ? 'Flagged sessions are detected in live monitoring.'
+                : 'No flagged activity yet. New alerts will appear here.'
+            }
+            title="Alert stream"
+            tone={flaggedCount > 0 ? 'warning' : 'success'}
+          />
         </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  alertCard: {
-    alignItems: 'flex-start',
-    backgroundColor: palette.panel,
-    borderColor: palette.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-  },
-  alertCount: {
-    alignItems: 'center',
-    backgroundColor: palette.danger,
-    borderRadius: 99,
-    height: 16,
-    justifyContent: 'center',
-    position: 'absolute',
-    right: -6,
-    top: -6,
-    width: 16,
-  },
-  alertCountText: {
-    color: '#ffffff',
-    fontSize: 9,
-    fontWeight: '800',
-  },
-  alertLead: {
-    alignItems: 'flex-start',
-    flexDirection: 'row',
-    gap: 12,
-  },
-  alertMarker: {
-    borderRadius: 99,
-    height: 7,
-    marginTop: 6,
-    width: 7,
-  },
-  alertName: {
-    color: palette.text,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  alertText: {
-    color: palette.mutedStrong,
-    fontSize: 13,
-    marginTop: 6,
-  },
-  alertsHeader: {
-    marginBottom: 14,
-    marginTop: 28,
-  },
-  avatarBox: {
-    alignItems: 'center',
-    backgroundColor: palette.warningSoft,
-    borderRadius: radius.pill,
-    height: 30,
-    justifyContent: 'center',
-    width: 30,
-  },
-  avatarText: {
-    color: palette.warning,
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  bellWrap: {
-    padding: 2,
-    position: 'relative',
-  },
-  cardList: {
-    gap: 10,
-  },
-  content: {
-    alignSelf: 'center',
-    maxWidth: layout.maxWidth,
-    paddingBottom: layout.bottomPadding,
-    paddingHorizontal: layout.screenPaddingWide,
-    width: '100%',
-  },
-  createButton: {
-    alignItems: 'center',
-    backgroundColor: palette.panel,
-    borderColor: palette.border,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  createButtonText: {
-    color: palette.text,
-    fontSize: type.body,
-    fontWeight: '700',
-  },
-  emptyCard: {
-    backgroundColor: palette.panel,
-    borderColor: palette.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 16,
-  },
-  emptyCopy: {
-    color: palette.mutedStrong,
-    fontSize: type.body,
-    marginTop: 8,
-  },
-  emptyTitle: {
-    color: palette.text,
-    fontSize: type.bodyLarge,
-    fontWeight: '700',
-  },
-  errorCard: {
-    alignItems: 'flex-start',
-    backgroundColor: palette.dangerSoft,
-    borderColor: '#fecaca',
-    borderRadius: radius.md,
-    borderWidth: 1,
-    marginBottom: 14,
-    marginTop: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-  },
-  errorText: {
-    color: palette.danger,
-    fontSize: type.body,
-  },
-  headerActions: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 14,
-  },
-  headerMetaRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  levelBadge: {
-    borderRadius: radius.xs,
-    borderWidth: 1,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-  },
-  levelText: {
-    fontSize: type.tiny,
-    fontWeight: '700',
-    letterSpacing: 0.8,
-  },
-  loadingCard: {
-    alignItems: 'center',
-    backgroundColor: palette.panel,
-    borderColor: palette.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 14,
-    marginTop: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    ...shadow.card,
-  },
-  loadingText: {
-    color: palette.mutedStrong,
-    fontSize: type.body,
-  },
-  metricCard: {
-    backgroundColor: palette.panel,
-    borderColor: palette.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flex: 1,
-    gap: 8,
-    minHeight: 68,
-    paddingHorizontal: 10,
-    paddingVertical: 11,
-    ...shadow.card,
-  },
-  metricLabel: {
-    color: palette.mutedStrong,
-    fontSize: type.tiny,
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
-  },
-  metricRow: {
-    flexDirection: 'row',
-    gap: 6,
-    marginBottom: 22,
-    marginTop: 18,
-  },
-  metricValue: {
-    fontSize: type.display,
-    fontWeight: '800',
-  },
-  monitorButton: {
-    alignItems: 'center',
-    borderColor: palette.border,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  monitorText: {
-    color: palette.teal,
-    fontSize: type.body,
-    fontWeight: '700',
-  },
-  retryButton: {
-    borderColor: '#fecaca',
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    marginTop: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  retryButtonText: {
-    color: palette.danger,
-    fontSize: type.body,
-    fontWeight: '700',
-  },
-  safeArea: {
-    backgroundColor: palette.background,
-    flex: 1,
-  },
-  sectionAccent: {
-    color: palette.danger,
-    fontSize: type.body,
-    fontWeight: '700',
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
-  },
-  sectionDot: {
-    backgroundColor: palette.danger,
-    borderRadius: 99,
-    height: 6,
-    width: 6,
-  },
-  sectionHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 14,
-  },
-  sectionLabel: {
-    color: palette.mutedStrong,
-    fontSize: type.label,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-  },
-  sectionRight: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 10,
-  },
-  sectionState: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 8,
-  },
-  sessionCard: {
-    backgroundColor: palette.panel,
-    borderBottomWidth: 1,
-    borderColor: palette.border,
-    borderRadius: radius.md,
-    borderLeftWidth: 2,
-    borderRightWidth: 1,
-    borderTopWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    ...shadow.card,
-  },
-  sessionCode: {
-    color: palette.muted,
-    fontSize: 11,
-  },
-  sessionFlags: {
-    color: palette.warning,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  sessionFoot: {
-    color: palette.mutedStrong,
-    fontSize: 13,
-    marginTop: 12,
-  },
-  sessionHeader: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  sessionMetaRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 8,
-  },
-  sessionStudents: {
-    color: palette.mutedStrong,
-  },
-  sessionTimeMeta: {
-    color: palette.muted,
-    fontSize: 12,
-    marginTop: 10,
-    textTransform: 'uppercase',
-  },
-  sessionTitle: {
-    color: palette.text,
-    fontSize: type.title,
-    fontWeight: '700',
-    marginTop: 10,
-  },
-  sessionTitleBlock: {
-    flex: 1,
-  },
-  staffMeta: {
-    color: palette.muted,
-    fontSize: 11,
-    letterSpacing: 0.4,
-  },
-  staffName: {
-    color: palette.text,
-    fontSize: type.display,
-    fontWeight: '800',
-    marginTop: 6,
-  },
-});
+function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
+  return StyleSheet.create({
+    alertCount: {
+      alignItems: 'center',
+      backgroundColor: colors.danger,
+      borderRadius: 99,
+      height: 16,
+      justifyContent: 'center',
+      position: 'absolute',
+      right: -6,
+      top: -6,
+      width: 16,
+    },
+    alertCountText: {
+      color: colors.background,
+      fontSize: 9,
+      fontWeight: '800',
+    },
+    alertsHeader: {
+      marginBottom: 14,
+      marginTop: 28,
+    },
+    avatarBox: {
+      alignItems: 'center',
+      backgroundColor: colors.warningSoft,
+      borderRadius: radius.pill,
+      height: 30,
+      justifyContent: 'center',
+      width: 30,
+    },
+    avatarText: {
+      color: colors.warning,
+      fontSize: 12,
+      fontWeight: '800',
+    },
+    bellWrap: {
+      padding: 2,
+      position: 'relative',
+    },
+    cardList: {
+      gap: 10,
+    },
+    content: {
+      alignSelf: 'center',
+      maxWidth: layout.maxWidth,
+      paddingBottom: layout.bottomPadding,
+      paddingHorizontal: layout.screenPaddingWide,
+      width: '100%',
+    },
+    createButton: {
+      alignItems: 'center',
+      backgroundColor: colors.panel,
+      borderColor: colors.border,
+      borderRadius: radius.sm,
+      borderWidth: 1,
+      flexDirection: 'row',
+      gap: 6,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+    },
+    createButtonText: {
+      color: colors.text,
+      fontSize: type.body,
+      fontWeight: '700',
+    },
+    emptyCopy: {
+      color: colors.mutedStrong,
+      fontSize: type.body,
+      marginTop: 8,
+    },
+    emptyTitle: {
+      color: colors.text,
+      fontSize: type.bodyLarge,
+      fontWeight: '700',
+    },
+    errorMessage: {
+      marginBottom: 14,
+      marginTop: 12,
+    },
+    headerActions: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 14,
+    },
+    headerActionPressed: {
+      opacity: 0.78,
+      transform: [{ scale: 0.96 }],
+    },
+    headerMetaRow: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+    },
+    heroStatCard: {
+      alignItems: 'center',
+      backgroundColor: colors.panel,
+      borderColor: colors.border,
+      borderWidth: 1,
+      borderRadius: radius.lg,
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginTop: 18,
+      paddingHorizontal: 20,
+      paddingVertical: 20,
+    },
+    heroStatCaption: {
+      color: colors.mutedStrong,
+      fontSize: type.body,
+      marginTop: 4,
+    },
+    heroStatIcon: {
+      alignItems: 'center',
+      backgroundColor: colors.warningSoft,
+      borderColor: colors.border,
+      borderWidth: 1,
+      borderRadius: radius.pill,
+      height: 52,
+      justifyContent: 'center',
+      width: 52,
+    },
+    heroStatLabel: {
+      color: colors.mutedStrong,
+      fontSize: type.label,
+      fontWeight: '800',
+      letterSpacing: 1,
+    },
+    heroStatTextBlock: {
+      flex: 1,
+    },
+    heroStatValue: {
+      color: colors.text,
+      fontSize: type.display + 8,
+      fontWeight: '900',
+      marginTop: 4,
+    },
+    loadingCard: {
+      alignItems: 'center',
+      backgroundColor: colors.panel,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      flexDirection: 'row',
+      gap: 8,
+      marginBottom: 14,
+      marginTop: 12,
+      paddingHorizontal: 12,
+      paddingVertical: 12,
+    },
+    loadingText: {
+      color: colors.mutedStrong,
+      fontSize: type.body,
+    },
+    metricRow: {
+      flexDirection: 'row',
+      gap: 6,
+      marginBottom: 22,
+      marginTop: 14,
+    },
+    monitorButton: {
+      alignItems: 'center',
+      borderColor: colors.border,
+      borderRadius: radius.sm,
+      borderWidth: 1,
+      flexDirection: 'row',
+      gap: 6,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+    },
+    monitorText: {
+      color: colors.teal,
+      fontSize: type.body,
+      fontWeight: '700',
+    },
+    safeArea: {
+      backgroundColor: colors.background,
+      flex: 1,
+    },
+    sectionAccent: {
+      color: colors.danger,
+      fontSize: type.body,
+      fontWeight: '700',
+      letterSpacing: 0.8,
+      textTransform: 'uppercase',
+    },
+    sectionDot: {
+      backgroundColor: colors.danger,
+      borderRadius: 99,
+      height: 6,
+      width: 6,
+    },
+    sectionHeader: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginBottom: 14,
+    },
+    sectionLabel: {
+      color: colors.mutedStrong,
+      fontSize: type.label,
+      fontWeight: '700',
+      letterSpacing: 0.5,
+      textTransform: 'uppercase',
+    },
+    sectionRight: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 10,
+    },
+    sectionState: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 8,
+    },
+    sessionCard: {
+      borderLeftWidth: 3,
+    },
+    sessionCode: {
+      color: colors.muted,
+      fontSize: 11,
+    },
+    sessionFlags: {
+      color: colors.warning,
+      fontSize: 13,
+      fontWeight: '700',
+    },
+    sessionFoot: {
+      color: colors.mutedStrong,
+      fontSize: 13,
+      marginTop: 12,
+    },
+    sessionHeader: {
+      flexDirection: 'row',
+      gap: 12,
+    },
+    sessionMetaRow: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 8,
+    },
+    sessionStudents: {
+      color: colors.mutedStrong,
+    },
+    sessionTimeMeta: {
+      color: colors.muted,
+      fontSize: 12,
+      marginTop: 10,
+      textTransform: 'uppercase',
+    },
+    sessionTitle: {
+      color: colors.text,
+      fontSize: type.title,
+      fontWeight: '700',
+      marginTop: 10,
+    },
+    sessionTitleBlock: {
+      flex: 1,
+    },
+    staffMeta: {
+      color: colors.muted,
+      fontSize: 11,
+      letterSpacing: 0.4,
+    },
+    staffName: {
+      color: colors.text,
+      fontSize: type.display,
+      fontWeight: '800',
+      marginTop: 6,
+    },
+  });
+}

@@ -1,6 +1,6 @@
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -12,7 +12,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { layout, palette, radius, shadow, type } from '@/constants/design';
+import { ActionButton, InlineMessage, SurfaceCard } from '@/components/product-ui';
+import { layout, radius, shadow, type } from '@/constants/design';
+import { useAppTheme } from '@/hooks/use-app-theme';
 import {
   createExamSession,
   type CreateExamQuestionInput,
@@ -82,6 +84,9 @@ function normalizeQuestionsForSubmit(questions: CreateExamQuestionInput[]) {
 }
 
 export default function InvigilatorCreateScreen() {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const [courseCode, setCourseCode] = useState('');
   const [courseTitle, setCourseTitle] = useState('');
   const [examDate, setExamDate] = useState('');
@@ -93,7 +98,6 @@ export default function InvigilatorCreateScreen() {
   const [mode, setMode] = useState<MonitoringMode>('standard');
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-  const [successMessage, setSuccessMessage] = useState('');
 
   const updateQuestionPrompt = (index: number, prompt: string) => {
     setQuestions((current) =>
@@ -144,12 +148,10 @@ export default function InvigilatorCreateScreen() {
 
   const handleCreateSession = async () => {
     setErrorMessage('');
-    setSuccessMessage('');
     setIsSaving(true);
 
     try {
       const requestedStudentIds = parseStudentInstitutionalIds(studentIdsInput);
-      const isAllStudentsSession = requestedStudentIds.length === 0;
       const parsedQuestions = normalizeQuestionsForSubmit(questions);
       const result = await createExamSession({
         courseCode,
@@ -163,21 +165,13 @@ export default function InvigilatorCreateScreen() {
         studentInstitutionalIds: requestedStudentIds,
       });
 
-      const registrationCopy = isAllStudentsSession
-        ? result.registeredCount > 0
-          ? `Exam is open to all students. ${result.registeredCount} student${result.registeredCount === 1 ? '' : 's'} registered automatically.`
-          : 'Exam is open to all students, but no student profiles were found to register.'
-        : result.registeredCount > 0
-          ? `${result.registeredCount} selected student${result.registeredCount === 1 ? '' : 's'} registered.`
-          : 'No selected students were registered.';
-      const missingIdsCopy =
-        result.missingStudentIds.length > 0
-          ? ` Missing IDs not found: ${result.missingStudentIds.join(', ')}.`
-          : '';
-
-      setSuccessMessage(`Session created successfully. ${registrationCopy}${missingIdsCopy}`);
-      setStudentIdsInput('');
-      setQuestions([createEmptyQuestion()]);
+      router.replace({
+        pathname: '/(invigilator-tabs)/session-details',
+        params: {
+          examId: result.examId,
+          missingStudentIds: result.missingStudentIds.join(','),
+        },
+      });
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : 'Unable to create session. Please try again.'
@@ -194,124 +188,126 @@ export default function InvigilatorCreateScreen() {
           <Pressable
             onPress={() => router.navigate('/(invigilator-tabs)')}
             style={styles.backButton}>
-            <Feather color={palette.mutedStrong} name="chevron-left" size={18} />
+            <Feather color={colors.mutedStrong} name="chevron-left" size={18} />
           </Pressable>
           <Text style={styles.eyebrow}>NEW SESSION</Text>
         </View>
 
         <Text style={styles.title}>Create Exam Session</Text>
 
-        <View style={styles.formGroup}>
-          <Text style={styles.label}>COURSE CODE</Text>
-          <TextInput
-            autoCapitalize="characters"
-            autoCorrect={false}
-            onChangeText={setCourseCode}
-            placeholder="CS 450"
-            placeholderTextColor={palette.muted}
-            style={styles.input}
-            value={courseCode}
-          />
-        </View>
-
-        <View style={styles.formGroup}>
-          <Text style={styles.label}>COURSE NAME</Text>
-          <TextInput
-            autoCapitalize="words"
-            autoCorrect={false}
-            onChangeText={setCourseTitle}
-            placeholder="Computer Networks"
-            placeholderTextColor={palette.muted}
-            style={styles.input}
-            value={courseTitle}
-          />
-        </View>
-
-        <View style={styles.twoUp}>
-          <View style={styles.twoUpItem}>
-            <Text style={styles.label}>DATE</Text>
-            <View style={styles.inputWithIcon}>
-              <TextInput
-                autoCapitalize="none"
-                autoCorrect={false}
-                onChangeText={setExamDate}
-                placeholder="YYYY-MM-DD"
-                placeholderTextColor={palette.muted}
-                style={styles.inputInline}
-                value={examDate}
-              />
-              <Feather color={palette.mutedStrong} name="calendar" size={15} />
-            </View>
-          </View>
-          <View style={styles.twoUpItem}>
-            <Text style={styles.label}>START TIME</Text>
-            <View style={styles.inputWithIcon}>
-              <TextInput
-                autoCapitalize="none"
-                autoCorrect={false}
-                onChangeText={setStartTime}
-                placeholder="HH:MM"
-                placeholderTextColor={palette.muted}
-                style={styles.inputInline}
-                value={startTime}
-              />
-              <Feather color={palette.mutedStrong} name="clock" size={15} />
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.twoUp}>
-          <View style={styles.twoUpItem}>
-            <Text style={styles.label}>DURATION (HRS)</Text>
-            <View style={styles.inputWithIcon}>
-              <TextInput
-                keyboardType="decimal-pad"
-                onChangeText={setDurationHours}
-                placeholder="3"
-                placeholderTextColor={palette.muted}
-                style={styles.inputInline}
-                value={durationHours}
-              />
-              <Feather color={palette.mutedStrong} name="clock" size={15} />
-            </View>
-          </View>
-          <View style={styles.twoUpItem}>
-            <Text style={styles.label}>MAX STUDENTS</Text>
+        <SurfaceCard style={styles.sectionCard}>
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>COURSE CODE</Text>
             <TextInput
-              keyboardType="number-pad"
-              onChangeText={setMaxStudents}
-              placeholder="50"
-              placeholderTextColor={palette.muted}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              onChangeText={setCourseCode}
+              placeholder="CS 450"
+              placeholderTextColor={colors.muted}
               style={styles.input}
-              value={maxStudents}
+              value={courseCode}
             />
           </View>
-        </View>
 
-        <View style={styles.formGroup}>
-          <Text style={styles.label}>REGISTER STUDENT IDS (OPTIONAL)</Text>
-          <TextInput
-            autoCapitalize="none"
-            autoCorrect={false}
-            multiline
-            numberOfLines={3}
-            onChangeText={setStudentIdsInput}
-            placeholder="12345678, 12345679"
-            placeholderTextColor={palette.muted}
-            style={[styles.input, styles.multilineInput]}
-            textAlignVertical="top"
-            value={studentIdsInput}
-          />
-          <Text style={styles.helperText}>
-            Leave empty to register all students, or separate specific IDs with commas/spaces.
-          </Text>
-        </View>
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>COURSE NAME</Text>
+            <TextInput
+              autoCapitalize="words"
+              autoCorrect={false}
+              onChangeText={setCourseTitle}
+              placeholder="Computer Networks"
+              placeholderTextColor={colors.muted}
+              style={styles.input}
+              value={courseTitle}
+            />
+          </View>
+
+          <View style={styles.twoUp}>
+            <View style={styles.twoUpItem}>
+              <Text style={styles.label}>DATE</Text>
+              <View style={styles.inputWithIcon}>
+                <TextInput
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  onChangeText={setExamDate}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor={colors.muted}
+                  style={styles.inputInline}
+                  value={examDate}
+                />
+                <Feather color={colors.mutedStrong} name="calendar" size={15} />
+              </View>
+            </View>
+            <View style={styles.twoUpItem}>
+              <Text style={styles.label}>START TIME</Text>
+              <View style={styles.inputWithIcon}>
+                <TextInput
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  onChangeText={setStartTime}
+                  placeholder="HH:MM"
+                  placeholderTextColor={colors.muted}
+                  style={styles.inputInline}
+                  value={startTime}
+                />
+                <Feather color={colors.mutedStrong} name="clock" size={15} />
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.twoUp}>
+            <View style={styles.twoUpItem}>
+              <Text style={styles.label}>DURATION (HRS)</Text>
+              <View style={styles.inputWithIcon}>
+                <TextInput
+                  keyboardType="decimal-pad"
+                  onChangeText={setDurationHours}
+                  placeholder="3"
+                  placeholderTextColor={colors.muted}
+                  style={styles.inputInline}
+                  value={durationHours}
+                />
+                <Feather color={colors.mutedStrong} name="clock" size={15} />
+              </View>
+            </View>
+            <View style={styles.twoUpItem}>
+              <Text style={styles.label}>MAX STUDENTS</Text>
+              <TextInput
+                keyboardType="number-pad"
+                onChangeText={setMaxStudents}
+                placeholder="50"
+                placeholderTextColor={colors.muted}
+                style={styles.input}
+                value={maxStudents}
+              />
+            </View>
+          </View>
+
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>REGISTER STUDENT IDS (OPTIONAL)</Text>
+            <TextInput
+              autoCapitalize="none"
+              autoCorrect={false}
+              multiline
+              numberOfLines={3}
+              onChangeText={setStudentIdsInput}
+              placeholder="12345678, 12345679"
+              placeholderTextColor={colors.muted}
+              style={[styles.input, styles.multilineInput]}
+              textAlignVertical="top"
+              value={studentIdsInput}
+            />
+            <Text style={styles.helperText}>
+              Leave empty to register all students, or separate specific IDs with commas/spaces.
+            </Text>
+          </View>
+        </SurfaceCard>
 
         <View style={styles.formGroup}>
           <View style={styles.questionHeader}>
             <Text style={styles.label}>MULTIPLE CHOICE QUESTIONS (OPTIONAL)</Text>
             <Pressable onPress={addQuestion} style={styles.addQuestionButton}>
-              <Feather color={palette.warning} name="plus" size={13} />
+              <Feather color={colors.warning} name="plus" size={13} />
               <Text style={styles.addQuestionText}>Add</Text>
             </Pressable>
           </View>
@@ -321,13 +317,13 @@ export default function InvigilatorCreateScreen() {
 
           <View style={styles.questionList}>
             {questions.map((question, questionIndex) => (
-              <View key={`question-${questionIndex}`} style={styles.questionCard}>
+              <SurfaceCard key={`question-${questionIndex}`} style={styles.questionCard}>
                 <View style={styles.questionCardHeader}>
                   <Text style={styles.questionTitle}>Question {questionIndex + 1}</Text>
                   <Pressable
                     onPress={() => removeQuestion(questionIndex)}
                     style={styles.removeQuestionButton}>
-                    <Feather color={palette.danger} name="trash-2" size={13} />
+                    <Feather color={colors.danger} name="trash-2" size={13} />
                   </Pressable>
                 </View>
 
@@ -337,7 +333,7 @@ export default function InvigilatorCreateScreen() {
                   multiline
                   onChangeText={(prompt) => updateQuestionPrompt(questionIndex, prompt)}
                   placeholder="Enter question text"
-                  placeholderTextColor={palette.muted}
+                  placeholderTextColor={colors.muted}
                   style={[styles.input, styles.questionPromptInput]}
                   textAlignVertical="top"
                   value={question.prompt}
@@ -371,7 +367,7 @@ export default function InvigilatorCreateScreen() {
                             updateQuestionOption(questionIndex, optionIndex, value)
                           }
                           placeholder={`Option ${optionLabel}`}
-                          placeholderTextColor={palette.muted}
+                          placeholderTextColor={colors.muted}
                           style={[styles.input, styles.optionInput]}
                           value={option}
                         />
@@ -379,7 +375,7 @@ export default function InvigilatorCreateScreen() {
                     );
                   })}
                 </View>
-              </View>
+              </SurfaceCard>
             ))}
           </View>
         </View>
@@ -404,7 +400,7 @@ export default function InvigilatorCreateScreen() {
           })}
         </View>
 
-        <View style={styles.featureCard}>
+        <SurfaceCard style={styles.featureCard} tone="muted">
           <Text style={styles.label}>AI FEATURES</Text>
           <View style={styles.featureList}>
             {aiFeatures.map((feature) => (
@@ -414,21 +410,20 @@ export default function InvigilatorCreateScreen() {
               </View>
             ))}
           </View>
-        </View>
+        </SurfaceCard>
 
-        {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
-        {successMessage ? <Text style={styles.successText}>{successMessage}</Text> : null}
+        {errorMessage ? (
+          <InlineMessage description={errorMessage} style={styles.inlineMessage} tone="danger" />
+        ) : null}
 
-        <Pressable
+        <ActionButton
+          containerStyle={styles.primaryButtonSpacing}
           disabled={isSaving}
+          icon={isSaving ? <ActivityIndicator color={colors.background} size="small" /> : undefined}
+          label={isSaving ? '' : 'Create Session'}
           onPress={handleCreateSession}
-          style={[styles.primaryButton, isSaving ? styles.primaryButtonDisabled : null]}>
-          {isSaving ? (
-            <ActivityIndicator color="#ffffff" size="small" />
-          ) : (
-            <Text style={styles.primaryButtonText}>Create Session</Text>
-          )}
-        </Pressable>
+          tone="accent"
+        />
 
         <Pressable disabled={isSaving} onPress={() => router.back()} style={styles.secondaryButton}>
           <Text style={styles.secondaryButtonText}>Cancel</Text>
@@ -438,295 +433,269 @@ export default function InvigilatorCreateScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  addQuestionButton: {
-    alignItems: 'center',
-    backgroundColor: palette.panel,
-    borderColor: palette.border,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  addQuestionText: {
-    color: palette.text,
-    fontSize: type.body,
-    fontWeight: '700',
-  },
-  backButton: {
-    alignItems: 'center',
-    height: 28,
-    justifyContent: 'center',
-    width: 28,
-  },
-  content: {
-    alignSelf: 'center',
-    maxWidth: layout.maxWidth,
-    paddingBottom: layout.bottomPadding,
-    paddingHorizontal: layout.screenPaddingWide,
-    width: '100%',
-  },
-  eyebrow: {
-    color: palette.mutedStrong,
-    fontSize: type.label,
-    letterSpacing: 2.2,
-  },
-  errorText: {
-    color: palette.danger,
-    fontSize: type.body,
-    marginTop: 12,
-  },
-  correctOptionButton: {
-    alignItems: 'center',
-    borderColor: palette.border,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    height: 42,
-    justifyContent: 'center',
-    marginTop: 10,
-    width: 42,
-  },
-  correctOptionButtonActive: {
-    backgroundColor: palette.successSoft,
-    borderColor: palette.success,
-  },
-  correctOptionButtonText: {
-    color: palette.mutedStrong,
-    fontSize: type.bodyLarge,
-    fontWeight: '700',
-  },
-  correctOptionButtonTextActive: {
-    color: palette.success,
-  },
-  featureCard: {
-    backgroundColor: palette.panel,
-    borderColor: palette.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    marginTop: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 16,
-    ...shadow.card,
-  },
-  featureDot: {
-    backgroundColor: palette.success,
-    borderRadius: 99,
-    height: 5,
-    marginTop: 6,
-    width: 5,
-  },
-  featureList: {
-    gap: 10,
-    marginTop: 14,
-  },
-  featureRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  featureText: {
-    color: palette.mutedStrong,
-    fontSize: type.bodyLarge,
-  },
-  formGroup: {
-    marginTop: 18,
-  },
-  headerRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 10,
-  },
-  helperText: {
-    color: palette.muted,
-    fontSize: type.tiny,
-    marginTop: 8,
-  },
-  input: {
-    backgroundColor: palette.panel,
-    borderColor: palette.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    color: palette.text,
-    fontSize: type.bodyLarge,
-    marginTop: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  inputInline: {
-    color: palette.text,
-    flex: 1,
-    fontSize: type.bodyLarge,
-    paddingVertical: 12,
-  },
-  inputWithIcon: {
-    alignItems: 'center',
-    backgroundColor: palette.panel,
-    borderColor: palette.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 10,
-    paddingHorizontal: 14,
-  },
-  label: {
-    color: palette.mutedStrong,
-    fontSize: type.label,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-  },
-  modeCard: {
-    alignItems: 'flex-start',
-    backgroundColor: palette.panel,
-    borderColor: palette.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-  },
-  modeCardActive: {
-    backgroundColor: palette.tealSoft,
-    borderColor: palette.teal,
-  },
-  modeDescription: {
-    color: palette.mutedStrong,
-    fontSize: type.body,
-    marginTop: 6,
-  },
-  modeIndicator: {
-    borderColor: palette.border,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    height: 14,
-    marginTop: 3,
-    width: 14,
-  },
-  modeIndicatorActive: {
-    backgroundColor: palette.teal,
-    borderColor: palette.teal,
-  },
-  modeLabel: {
-    marginTop: 18,
-  },
-  modeList: {
-    gap: 8,
-    marginTop: 10,
-  },
-  modeTitle: {
-    color: palette.text,
-    fontSize: type.bodyLarge + 1,
-    fontWeight: '700',
-  },
-  multilineInput: {
-    minHeight: 88,
-    paddingTop: 12,
-  },
-  optionInput: {
-    flex: 1,
-    marginTop: 10,
-  },
-  optionList: {
-    gap: 6,
-    marginTop: 6,
-  },
-  optionRow: {
-    alignItems: 'flex-start',
-    flexDirection: 'row',
-    gap: 8,
-  },
-  primaryButton: {
-    alignItems: 'center',
-    backgroundColor: palette.teal,
-    borderRadius: radius.md,
-    marginTop: 18,
-    paddingVertical: 15,
-  },
-  primaryButtonDisabled: {
-    opacity: 0.7,
-  },
-  primaryButtonText: {
-    color: '#ffffff',
-    fontSize: type.bodyLarge,
-    fontWeight: '800',
-  },
-  safeArea: {
-    backgroundColor: palette.background,
-    flex: 1,
-  },
-  questionCard: {
-    backgroundColor: palette.panel,
-    borderColor: palette.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    marginTop: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    ...shadow.card,
-  },
-  questionCardHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  questionHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  questionList: {
-    marginTop: 8,
-  },
-  questionPromptInput: {
-    minHeight: 78,
-    paddingTop: 12,
-  },
-  questionTitle: {
-    color: palette.text,
-    fontSize: type.bodyLarge,
-    fontWeight: '700',
-  },
-  removeQuestionButton: {
-    alignItems: 'center',
-    borderColor: '#fecaca',
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    height: 28,
-    justifyContent: 'center',
-    width: 28,
-  },
-  secondaryButton: {
-    alignItems: 'center',
-    borderColor: palette.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    marginTop: 10,
-    paddingVertical: 14,
-  },
-  secondaryButtonText: {
-    color: palette.mutedStrong,
-    fontSize: type.bodyLarge,
-  },
-  successText: {
-    color: palette.success,
-    fontSize: type.body,
-    marginTop: 12,
-  },
-  title: {
-    color: palette.text,
-    fontSize: type.title,
-    fontWeight: '800',
-    marginTop: 22,
-  },
-  twoUp: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 18,
-  },
-  twoUpItem: {
-    flex: 1,
-  },
-});
+function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
+  return StyleSheet.create({
+    addQuestionButton: {
+      alignItems: 'center',
+      backgroundColor: colors.panel,
+      borderColor: colors.border,
+      borderRadius: radius.sm,
+      borderWidth: 1,
+      flexDirection: 'row',
+      gap: 6,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+    },
+    addQuestionText: {
+      color: colors.text,
+      fontSize: type.body,
+      fontWeight: '700',
+    },
+    backButton: {
+      alignItems: 'center',
+      height: 28,
+      justifyContent: 'center',
+      width: 28,
+    },
+    content: {
+      alignSelf: 'center',
+      maxWidth: layout.maxWidth,
+      paddingBottom: layout.bottomPadding,
+      paddingHorizontal: layout.screenPaddingWide,
+      width: '100%',
+    },
+    eyebrow: {
+      color: colors.mutedStrong,
+      fontSize: type.label,
+      letterSpacing: 2.2,
+    },
+    correctOptionButton: {
+      alignItems: 'center',
+      borderColor: colors.border,
+      borderRadius: radius.sm,
+      borderWidth: 1,
+      height: 42,
+      justifyContent: 'center',
+      marginTop: 10,
+      width: 42,
+    },
+    correctOptionButtonActive: {
+      backgroundColor: colors.successSoft,
+      borderColor: colors.success,
+    },
+    correctOptionButtonText: {
+      color: colors.mutedStrong,
+      fontSize: type.bodyLarge,
+      fontWeight: '700',
+    },
+    correctOptionButtonTextActive: {
+      color: colors.success,
+    },
+    featureCard: {
+      marginTop: 16,
+    },
+    featureDot: {
+      backgroundColor: colors.success,
+      borderRadius: 99,
+      height: 5,
+      marginTop: 6,
+      width: 5,
+    },
+    featureList: {
+      gap: 10,
+      marginTop: 14,
+    },
+    featureRow: {
+      flexDirection: 'row',
+      gap: 8,
+    },
+    featureText: {
+      color: colors.mutedStrong,
+      fontSize: type.bodyLarge,
+    },
+    formGroup: {
+      marginTop: 18,
+    },
+    headerRow: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 10,
+    },
+    helperText: {
+      color: colors.muted,
+      fontSize: type.tiny,
+      marginTop: 8,
+    },
+    inlineMessage: {
+      marginTop: 16,
+    },
+    input: {
+      backgroundColor: colors.panel,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      color: colors.text,
+      fontSize: type.bodyLarge,
+      marginTop: 10,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+    },
+    inputInline: {
+      color: colors.text,
+      flex: 1,
+      fontSize: type.bodyLarge,
+      paddingVertical: 12,
+    },
+    inputWithIcon: {
+      alignItems: 'center',
+      backgroundColor: colors.panel,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      flexDirection: 'row',
+      gap: 10,
+      marginTop: 10,
+      paddingHorizontal: 14,
+    },
+    label: {
+      color: colors.mutedStrong,
+      fontSize: type.label,
+      fontWeight: '700',
+      letterSpacing: 0.5,
+      textTransform: 'uppercase',
+    },
+    modeCard: {
+      alignItems: 'flex-start',
+      backgroundColor: colors.panel,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      flexDirection: 'row',
+      gap: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 14,
+      ...shadow.card,
+    },
+    modeCardActive: {
+      backgroundColor: colors.panelSoft,
+      borderColor: colors.warning,
+    },
+    modeDescription: {
+      color: colors.mutedStrong,
+      fontSize: type.body,
+      marginTop: 6,
+    },
+    modeIndicator: {
+      borderColor: colors.border,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      height: 14,
+      marginTop: 3,
+      width: 14,
+    },
+    modeIndicatorActive: {
+      backgroundColor: colors.warning,
+      borderColor: colors.warning,
+    },
+    modeLabel: {
+      marginTop: 18,
+    },
+    modeList: {
+      gap: 8,
+      marginTop: 10,
+    },
+    modeTitle: {
+      color: colors.text,
+      fontSize: type.bodyLarge + 1,
+      fontWeight: '700',
+    },
+    multilineInput: {
+      minHeight: 88,
+      paddingTop: 12,
+    },
+    optionInput: {
+      flex: 1,
+      marginTop: 10,
+    },
+    optionList: {
+      gap: 6,
+      marginTop: 6,
+    },
+    optionRow: {
+      alignItems: 'flex-start',
+      flexDirection: 'row',
+      gap: 8,
+    },
+    primaryButtonSpacing: {
+      marginTop: 18,
+    },
+    safeArea: {
+      backgroundColor: colors.background,
+      flex: 1,
+    },
+    sectionCard: {
+      marginTop: 18,
+      paddingVertical: 8,
+    },
+    questionCard: {
+      marginTop: 10,
+    },
+    questionCardHeader: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+    },
+    questionHeader: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+    },
+    questionList: {
+      marginTop: 8,
+    },
+    questionPromptInput: {
+      minHeight: 78,
+      paddingTop: 12,
+    },
+    questionTitle: {
+      color: colors.text,
+      fontSize: type.bodyLarge,
+      fontWeight: '700',
+    },
+    removeQuestionButton: {
+      alignItems: 'center',
+      borderColor: colors.dangerSoft,
+      borderRadius: radius.sm,
+      borderWidth: 1,
+      height: 28,
+      justifyContent: 'center',
+      width: 28,
+    },
+    secondaryButton: {
+      alignItems: 'center',
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      marginTop: 10,
+      paddingVertical: 14,
+    },
+    secondaryButtonText: {
+      color: colors.mutedStrong,
+      fontSize: type.bodyLarge,
+    },
+    title: {
+      color: colors.text,
+      fontSize: type.title,
+      fontWeight: '800',
+      marginTop: 22,
+    },
+    twoUp: {
+      flexDirection: 'row',
+      gap: 10,
+      marginTop: 18,
+    },
+    twoUpItem: {
+      flex: 1,
+    },
+  });
+}

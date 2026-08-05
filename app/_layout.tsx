@@ -1,26 +1,28 @@
-import { DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import 'react-native-reanimated';
 
-import { palette } from '@/constants/design';
+import { BootSplash } from '@/components/boot-splash';
+import { useAppTheme } from '@/hooks/use-app-theme';
 import { SessionProvider, useSession } from '@/providers/session-provider';
 
-const navigationTheme = {
-  ...DefaultTheme,
-  colors: {
-    ...DefaultTheme.colors,
-    background: palette.background,
-    border: palette.border,
-    card: palette.panel,
-    notification: palette.danger,
-    primary: palette.teal,
-    text: palette.text,
-  },
-};
-
 function RootStack() {
+  const { colors, isDark } = useAppTheme();
+  const navigationTheme = {
+    ...(isDark ? DarkTheme : DefaultTheme),
+    colors: {
+      ...(isDark ? DarkTheme.colors : DefaultTheme.colors),
+      background: colors.background,
+      border: colors.border,
+      card: colors.panel,
+      notification: colors.danger,
+      primary: colors.teal,
+      text: colors.text,
+    },
+  };
+
   const router = useRouter();
   const segments = useSegments();
   const { isAuthenticated, isLoading, role } = useSession();
@@ -61,24 +63,33 @@ function RootStack() {
   }, [isAuthenticated, isLoading, role, router, segments]);
 
   return (
-    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: palette.background } }}>
-      <Stack.Screen name="index" options={{ gestureEnabled: false }} />
-      <Stack.Screen name="sign-in" options={{ gestureEnabled: false }} />
-      <Stack.Screen name="invigilator-sign-in" options={{ gestureEnabled: false }} />
-      <Stack.Screen name="exam-session" options={{ gestureEnabled: false }} />
-      <Stack.Screen name="(tabs)" options={{ gestureEnabled: false }} />
-      <Stack.Screen name="(invigilator-tabs)" options={{ gestureEnabled: false }} />
-    </Stack>
+    <ThemeProvider value={navigationTheme}>
+      {isLoading ? (
+        <>
+          <BootSplash />
+          <StatusBar backgroundColor={colors.background} style={isDark ? 'light' : 'dark'} />
+        </>
+      ) : (
+        <>
+          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
+            <Stack.Screen name="index" options={{ gestureEnabled: false }} />
+            <Stack.Screen name="sign-in" options={{ gestureEnabled: false }} />
+            <Stack.Screen name="invigilator-sign-in" options={{ gestureEnabled: false }} />
+            <Stack.Screen name="exam-session" options={{ gestureEnabled: false }} />
+            <Stack.Screen name="(tabs)" options={{ gestureEnabled: false }} />
+            <Stack.Screen name="(invigilator-tabs)" options={{ gestureEnabled: false }} />
+          </Stack>
+          <StatusBar backgroundColor={colors.background} style={isDark ? 'light' : 'dark'} />
+        </>
+      )}
+    </ThemeProvider>
   );
 }
 
 export default function RootLayout() {
   return (
-    <ThemeProvider value={navigationTheme}>
-      <SessionProvider>
-        <RootStack />
-      </SessionProvider>
-      <StatusBar style="dark" backgroundColor={palette.background} />
-    </ThemeProvider>
+    <SessionProvider>
+      <RootStack />
+    </SessionProvider>
   );
 }

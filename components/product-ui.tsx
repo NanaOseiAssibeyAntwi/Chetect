@@ -10,7 +10,8 @@ import {
   type ViewStyle,
 } from 'react-native';
 
-import { font, palette, radius, shadow, type } from '@/constants/design';
+import { font, radius, shadow, type } from '@/constants/design';
+import { useAppTheme } from '@/hooks/use-app-theme';
 
 type SurfaceTone = 'default' | 'muted' | 'raised' | 'dark';
 type ButtonTone = 'primary' | 'accent' | 'secondary' | 'danger';
@@ -69,119 +70,16 @@ type InlineMessageProps = {
   tone?: MessageTone;
 };
 
-const toneSurfaceStyles: Record<SurfaceTone, ViewStyle> = {
-  dark: {
-    backgroundColor: palette.surfaceGlassDark,
-    borderColor: palette.borderStrong,
-  },
-  default: {
-    backgroundColor: palette.surfaceGlassStrong,
-    borderColor: palette.border,
-  },
-  muted: {
-    backgroundColor: palette.panel,
-    borderColor: palette.borderSoft,
-  },
-  raised: {
-    backgroundColor: palette.panelRaised,
-    borderColor: palette.borderStrong,
-  },
-};
+export function SurfaceCard({ accentColor, children, style, tone = 'default' }: SurfaceCardProps) {
+  const { colors } = useAppTheme();
 
-const badgeTones: Record<
-  BadgeTone,
-  { backgroundColor: string; borderColor: string; dotColor: string; textColor: string }
-> = {
-  danger: {
-    backgroundColor: palette.dangerSoft,
-    borderColor: 'rgba(255, 95, 105, 0.24)',
-    dotColor: palette.danger,
-    textColor: palette.danger,
-  },
-  neutral: {
-    backgroundColor: palette.panelSoft,
-    borderColor: palette.border,
-    dotColor: palette.sky,
-    textColor: palette.mutedStrong,
-  },
-  primary: {
-    backgroundColor: palette.tealSoft,
-    borderColor: 'rgba(57, 231, 219, 0.24)',
-    dotColor: palette.teal,
-    textColor: palette.teal,
-  },
-  success: {
-    backgroundColor: palette.successSoft,
-    borderColor: 'rgba(35, 223, 121, 0.24)',
-    dotColor: palette.success,
-    textColor: palette.success,
-  },
-  warning: {
-    backgroundColor: palette.warningSoft,
-    borderColor: 'rgba(242, 194, 48, 0.24)',
-    dotColor: palette.warning,
-    textColor: palette.warning,
-  },
-};
+  const toneSurfaceStyles: Record<SurfaceTone, ViewStyle> = {
+    dark: { backgroundColor: colors.surfaceGlassDark, borderColor: colors.borderStrong },
+    default: { backgroundColor: colors.surfaceGlassStrong, borderColor: colors.border },
+    muted: { backgroundColor: colors.panel, borderColor: colors.borderSoft },
+    raised: { backgroundColor: colors.panelRaised, borderColor: colors.borderStrong },
+  };
 
-const buttonTones: Record<
-  ButtonTone,
-  { backgroundColor: string; borderColor: string; textColor: string }
-> = {
-  accent: {
-    backgroundColor: palette.warning,
-    borderColor: palette.warning,
-    textColor: palette.background,
-  },
-  danger: {
-    backgroundColor: 'transparent',
-    borderColor: 'rgba(255, 95, 105, 0.48)',
-    textColor: palette.danger,
-  },
-  primary: {
-    backgroundColor: palette.teal,
-    borderColor: palette.teal,
-    textColor: palette.background,
-  },
-  secondary: {
-    backgroundColor: palette.panelRaised,
-    borderColor: palette.borderStrong,
-    textColor: palette.text,
-  },
-};
-
-const messageTones: Record<
-  MessageTone,
-  { accentColor: string; backgroundColor: string; borderColor: string }
-> = {
-  danger: {
-    accentColor: palette.danger,
-    backgroundColor: palette.dangerSoft,
-    borderColor: 'rgba(255, 95, 105, 0.24)',
-  },
-  neutral: {
-    accentColor: palette.sky,
-    backgroundColor: palette.panelSoft,
-    borderColor: palette.border,
-  },
-  success: {
-    accentColor: palette.success,
-    backgroundColor: palette.successSoft,
-    borderColor: 'rgba(35, 223, 121, 0.24)',
-  },
-  warning: {
-    accentColor: palette.warning,
-    backgroundColor: palette.warningSoft,
-    borderColor: 'rgba(242, 194, 48, 0.24)',
-  },
-};
-
-export function SurfaceCard({
-  accentColor,
-  children,
-  style,
-  tone = 'default',
-}: SurfaceCardProps) {
   return (
     <View
       style={[
@@ -190,9 +88,10 @@ export function SurfaceCard({
         shadow.card,
         accentColor
           ? {
-              borderColor: accentColor,
+              borderLeftColor: accentColor,
+              borderLeftWidth: 3,
               shadowColor: accentColor,
-              shadowOpacity: 0.08,
+              shadowOpacity: 0.1,
             }
           : null,
         style,
@@ -202,22 +101,27 @@ export function SurfaceCard({
   );
 }
 
-export function SectionIntro({
-  action,
-  align = 'left',
-  eyebrow,
-  subtitle,
-  title,
-}: SectionIntroProps) {
+export function SectionIntro({ action, align = 'left', eyebrow, subtitle, title }: SectionIntroProps) {
+  const { colors } = useAppTheme();
   const centered = align === 'center';
 
   return (
     <View style={[styles.sectionIntro, centered ? styles.sectionIntroCentered : null]}>
       <View style={styles.sectionIntroText}>
-        {eyebrow ? <Text style={[styles.sectionEyebrow, centered ? styles.centerText : null]}>{eyebrow}</Text> : null}
-        <Text style={[styles.sectionTitle, centered ? styles.centerText : null]}>{title}</Text>
+        {eyebrow ? (
+          <Text
+            style={[styles.sectionEyebrow, { color: colors.mutedStrong }, centered ? styles.centerText : null]}>
+            {eyebrow}
+          </Text>
+        ) : null}
+        <Text style={[styles.sectionTitle, { color: colors.text }, centered ? styles.centerText : null]}>
+          {title}
+        </Text>
         {subtitle ? (
-          <Text style={[styles.sectionSubtitle, centered ? styles.centerText : null]}>{subtitle}</Text>
+          <Text
+            style={[styles.sectionSubtitle, { color: colors.mutedStrong }, centered ? styles.centerText : null]}>
+            {subtitle}
+          </Text>
         ) : null}
       </View>
       {action ? <View style={styles.sectionAction}>{action}</View> : null}
@@ -225,23 +129,51 @@ export function SectionIntro({
   );
 }
 
-export function AccentBadge({
-  icon,
-  label,
-  style,
-  textStyle,
-  tone = 'neutral',
-}: AccentBadgeProps) {
+export function AccentBadge({ icon, label, style, textStyle, tone = 'neutral' }: AccentBadgeProps) {
+  const { colors } = useAppTheme();
+
+  const badgeTones: Record<
+    BadgeTone,
+    { backgroundColor: string; borderColor: string; dotColor: string; textColor: string }
+  > = {
+    danger: {
+      backgroundColor: colors.dangerSoft,
+      borderColor: 'rgba(244, 55, 107, 0.24)',
+      dotColor: colors.danger,
+      textColor: colors.danger,
+    },
+    neutral: {
+      backgroundColor: colors.panelSoft,
+      borderColor: colors.border,
+      dotColor: colors.sky,
+      textColor: colors.mutedStrong,
+    },
+    primary: {
+      backgroundColor: colors.tealSoft,
+      borderColor: 'rgba(109, 91, 246, 0.24)',
+      dotColor: colors.teal,
+      textColor: colors.teal,
+    },
+    success: {
+      backgroundColor: colors.successSoft,
+      borderColor: 'rgba(18, 184, 134, 0.24)',
+      dotColor: colors.success,
+      textColor: colors.success,
+    },
+    warning: {
+      backgroundColor: colors.warningSoft,
+      borderColor: 'rgba(245, 158, 11, 0.24)',
+      dotColor: colors.warning,
+      textColor: colors.warning,
+    },
+  };
   const presentation = badgeTones[tone];
 
   return (
     <View
       style={[
         styles.badge,
-        {
-          backgroundColor: presentation.backgroundColor,
-          borderColor: presentation.borderColor,
-        },
+        { backgroundColor: presentation.backgroundColor, borderColor: presentation.borderColor },
         style,
       ]}>
       {icon ?? <View style={[styles.badgeDot, { backgroundColor: presentation.dotColor }]} />}
@@ -250,19 +182,21 @@ export function AccentBadge({
   );
 }
 
-export function MetricTile({
-  accentColor = palette.text,
-  caption,
-  label,
-  style,
-  tone = 'muted',
-  value,
-}: MetricTileProps) {
+export function MetricTile({ accentColor, caption, label, style, tone = 'muted', value }: MetricTileProps) {
+  const { colors } = useAppTheme();
+
+  const toneSurfaceStyles: Record<SurfaceTone, ViewStyle> = {
+    dark: { backgroundColor: colors.surfaceGlassDark, borderColor: colors.borderStrong },
+    default: { backgroundColor: colors.surfaceGlassStrong, borderColor: colors.border },
+    muted: { backgroundColor: colors.panel, borderColor: colors.borderSoft },
+    raised: { backgroundColor: colors.panelRaised, borderColor: colors.borderStrong },
+  };
+
   return (
     <View style={[styles.metricTile, toneSurfaceStyles[tone], style]}>
-      <Text style={[styles.metricValue, { color: accentColor }]}>{value}</Text>
-      <Text style={styles.metricLabel}>{label}</Text>
-      {caption ? <Text style={styles.metricCaption}>{caption}</Text> : null}
+      <Text style={[styles.metricValue, { color: accentColor ?? colors.text }]}>{value}</Text>
+      <Text style={[styles.metricLabel, { color: colors.mutedStrong }]}>{label}</Text>
+      {caption ? <Text style={[styles.metricCaption, { color: colors.muted }]}>{caption}</Text> : null}
     </View>
   );
 }
@@ -278,7 +212,29 @@ export function ActionButton({
   textStyle,
   tone = 'primary',
 }: ActionButtonProps) {
+  const { colors } = useAppTheme();
+
+  const buttonTones: Record<ButtonTone, { backgroundColor: string; borderColor: string; textColor: string }> = {
+    accent: { backgroundColor: colors.warning, borderColor: colors.warning, textColor: colors.background },
+    danger: { backgroundColor: 'transparent', borderColor: colors.borderStrong, textColor: colors.danger },
+    primary: { backgroundColor: colors.teal, borderColor: colors.teal, textColor: colors.background },
+    secondary: { backgroundColor: colors.panelRaised, borderColor: colors.borderStrong, textColor: colors.text },
+  };
   const presentation = buttonTones[tone];
+
+  const content = (
+    <>
+      {icon ? <View style={styles.actionButtonIcon}>{icon}</View> : null}
+      <Text
+        style={[
+          styles.actionButtonText,
+          { color: presentation.textColor },
+          textStyle,
+        ]}>
+        {label}
+      </Text>
+    </>
+  );
 
   return (
     <Pressable
@@ -295,37 +251,33 @@ export function ActionButton({
         (pressed || disabled) ? styles.actionButtonPressed : null,
         containerStyle,
       ]}>
-      {icon ? <View style={styles.actionButtonIcon}>{icon}</View> : null}
-      <Text style={[styles.actionButtonText, { color: presentation.textColor }, textStyle]}>
-        {label}
-      </Text>
+      {content}
     </Pressable>
   );
 }
 
-export function InlineMessage({
-  action,
-  description,
-  style,
-  title,
-  tone = 'neutral',
-}: InlineMessageProps) {
+export function InlineMessage({ action, description, style, title, tone = 'neutral' }: InlineMessageProps) {
+  const { colors } = useAppTheme();
+
+  const messageTones: Record<MessageTone, { accentColor: string; backgroundColor: string; borderColor: string }> = {
+    danger: { accentColor: colors.danger, backgroundColor: colors.panel, borderColor: colors.border },
+    neutral: { accentColor: colors.sky, backgroundColor: colors.panelSoft, borderColor: colors.border },
+    success: { accentColor: colors.success, backgroundColor: colors.panel, borderColor: colors.border },
+    warning: { accentColor: colors.warning, backgroundColor: colors.panel, borderColor: colors.border },
+  };
   const presentation = messageTones[tone];
 
   return (
     <View
       style={[
         styles.inlineMessage,
-        {
-          backgroundColor: presentation.backgroundColor,
-          borderColor: presentation.borderColor,
-        },
+        { backgroundColor: presentation.backgroundColor, borderColor: presentation.borderColor },
         style,
       ]}>
       <View style={[styles.inlineMessageAccent, { backgroundColor: presentation.accentColor }]} />
       <View style={styles.inlineMessageBody}>
-        {title ? <Text style={styles.inlineMessageTitle}>{title}</Text> : null}
-        <Text style={styles.inlineMessageDescription}>{description}</Text>
+        {title ? <Text style={[styles.inlineMessageTitle, { color: colors.text }]}>{title}</Text> : null}
+        <Text style={[styles.inlineMessageDescription, { color: colors.mutedStrong }]}>{description}</Text>
         {action ? <View style={styles.inlineMessageAction}>{action}</View> : null}
       </View>
     </View>
@@ -336,12 +288,13 @@ const styles = StyleSheet.create({
   actionButton: {
     alignItems: 'center',
     borderRadius: radius.sm,
-    borderWidth: 1,
+    borderWidth: 1.5,
+    borderColor: 'transparent',
     flexDirection: 'row',
     gap: 10,
     justifyContent: 'center',
-    minHeight: 48,
-    paddingHorizontal: 18,
+    minHeight: 52,
+    paddingHorizontal: 20,
     width: '100%',
   },
   actionButtonCompact: {
@@ -357,22 +310,23 @@ const styles = StyleSheet.create({
     width: undefined,
   },
   actionButtonPressed: {
-    opacity: 0.88,
+    opacity: 0.9,
+    transform: [{ scale: 0.98 }],
   },
   actionButtonText: {
     fontFamily: font.body,
     fontSize: type.bodyLarge,
-    fontWeight: '900',
-    letterSpacing: 0,
+    fontWeight: '800',
+    letterSpacing: 0.1,
   },
   badge: {
     alignItems: 'center',
     alignSelf: 'flex-start',
-    borderRadius: radius.sm,
+    borderRadius: radius.pill,
     borderWidth: 1,
     flexDirection: 'row',
     gap: 8,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingVertical: 6,
   },
   badgeDot: {
@@ -413,27 +367,23 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   inlineMessageDescription: {
-    color: palette.mutedStrong,
     fontFamily: font.body,
     fontSize: type.body,
     lineHeight: 21,
   },
   inlineMessageTitle: {
-    color: palette.text,
     fontFamily: font.body,
     fontSize: type.bodyLarge,
     fontWeight: '900',
     marginBottom: 4,
   },
   metricCaption: {
-    color: palette.muted,
     fontFamily: font.body,
     fontSize: type.tiny,
     lineHeight: 15,
     marginTop: 8,
   },
   metricLabel: {
-    color: palette.mutedStrong,
     fontFamily: font.mono,
     fontSize: type.tiny,
     fontWeight: '700',
@@ -445,9 +395,9 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     borderWidth: 1,
     flex: 1,
-    minHeight: 84,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
+    minHeight: 82,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
   },
   metricValue: {
     fontFamily: font.display,
@@ -460,7 +410,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   sectionEyebrow: {
-    color: palette.mutedStrong,
     fontFamily: font.body,
     fontSize: type.tiny,
     fontWeight: '700',
@@ -478,13 +427,11 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   sectionSubtitle: {
-    color: palette.mutedStrong,
     fontFamily: font.body,
     fontSize: type.body,
     lineHeight: 22,
   },
   sectionTitle: {
-    color: palette.text,
     fontFamily: font.display,
     fontSize: type.display - 2,
     fontWeight: '900',
@@ -494,7 +441,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     borderWidth: 1,
     overflow: 'hidden',
-    paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
   },
 });

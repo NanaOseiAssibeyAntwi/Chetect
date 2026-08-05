@@ -1,10 +1,11 @@
-import { Feather } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
-import { layout, palette, radius, shadow, type } from '@/constants/design';
+import { AppScreen } from '@/components/app-screen';
+import { AccentBadge, ActionButton, InlineMessage, SurfaceCard } from '@/components/product-ui';
+import { layout, radius, type } from '@/constants/design';
+import { useAppTheme } from '@/hooks/use-app-theme';
 import { fetchStudentExamResult, type StudentExamResultData } from '@/lib/student-exam';
 
 function formatSubmittedAt(isoDate: string) {
@@ -37,6 +38,9 @@ function getPerformanceLabel(scorePercent: number) {
 }
 
 export default function ResultsScreen() {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const params = useLocalSearchParams<{ examId?: string }>();
   const examId = typeof params.examId === 'string' ? params.examId : undefined;
 
@@ -80,6 +84,16 @@ export default function ResultsScreen() {
     () => getPerformanceLabel(resultData?.scorePercent ?? 0),
     [resultData?.scorePercent]
   );
+  const scoreColor = useMemo(() => {
+    const scorePercent = resultData?.scorePercent ?? 0;
+    if (scorePercent >= 70) {
+      return colors.success;
+    }
+    if (scorePercent >= 50) {
+      return colors.warning;
+    }
+    return colors.danger;
+  }, [colors, resultData?.scorePercent]);
   const normalizedExamTitle = String(resultData?.examTitle ?? '').trim();
   const normalizedCourseCode = String(resultData?.courseCode ?? '')
     .trim()
@@ -96,237 +110,168 @@ export default function ResultsScreen() {
     : submittedMeta;
 
   return (
-    <SafeAreaView edges={['top']} style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.heroCard}>
-          <View>
-            <Text style={styles.eyebrow}>POST-EXAM RESULT</Text>
-            <Text style={styles.title}>{headerTitle}</Text>
-            <Text style={styles.meta}>{headerMeta}</Text>
-          </View>
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>SUBMITTED</Text>
-          </View>
+    <AppScreen accent="teal" contentContainerStyle={styles.content} edges={['top']}>
+      <SurfaceCard style={styles.heroCard}>
+        <View style={styles.heroText}>
+          <Text style={styles.eyebrow}>POST-EXAM RESULT</Text>
+          <Text style={styles.title}>{headerTitle}</Text>
+          <Text style={styles.meta}>{headerMeta}</Text>
         </View>
+        <AccentBadge label="SUBMITTED" style={styles.badge} tone="success" />
+      </SurfaceCard>
 
-        {isLoading ? (
-          <View style={styles.loadingCard}>
-            <ActivityIndicator color={palette.teal} size="small" />
-            <Text style={styles.loadingText}>Loading result...</Text>
-          </View>
-        ) : null}
+      {isLoading ? (
+        <SurfaceCard style={styles.loadingCard} tone="muted">
+          <ActivityIndicator color={colors.teal} size="small" />
+          <Text style={styles.loadingText}>Loading result...</Text>
+        </SurfaceCard>
+      ) : null}
 
-        {errorMessage ? (
-          <View style={styles.errorCard}>
-            <Text style={styles.errorText}>{errorMessage}</Text>
-            <Pressable onPress={() => router.replace('/(tabs)')} style={styles.retryButton}>
-              <Text style={styles.retryButtonText}>Back to dashboard</Text>
-            </Pressable>
-          </View>
-        ) : null}
+      {errorMessage ? (
+        <InlineMessage
+          action={
+            <ActionButton
+              compact
+              fullWidth={false}
+              label="Back to dashboard"
+              onPress={() => router.replace('/(tabs)')}
+              tone="danger"
+            />
+          }
+          description={errorMessage}
+          style={styles.errorCard}
+          tone="danger"
+        />
+      ) : null}
 
-        {!isLoading && !errorMessage && resultData ? (
-          <View style={styles.sectionBlock}>
-            <Text style={styles.sectionLabel}>SCORE SUMMARY</Text>
+      {!isLoading && !errorMessage && resultData ? (
+        <View style={styles.sectionBlock}>
+          <Text style={styles.sectionLabel}>SCORE SUMMARY</Text>
 
-            <View style={styles.scoreCard}>
-              <Text style={styles.scoreValue}>{resultData.scorePercent}%</Text>
-              <Text style={styles.scoreLabel}>{performanceLabel}</Text>
-              <Text style={styles.scoreMeta}>
-                {resultData.correctAnswers} correct out of {resultData.totalQuestions} questions
-              </Text>
+          <SurfaceCard style={styles.scoreCard} tone="muted">
+            <View style={[styles.scoreRing, { borderColor: scoreColor }]}>
+              <Text style={[styles.scoreValue, { color: scoreColor }]}>{resultData.scorePercent}%</Text>
             </View>
+            <Text style={styles.scoreLabel}>{performanceLabel}</Text>
+            <Text style={styles.scoreMeta}>
+              {resultData.correctAnswers} correct out of {resultData.totalQuestions} questions
+            </Text>
+          </SurfaceCard>
 
-            <View style={styles.remarkCard}>
-              <Text style={styles.remarkTitle}>Remark</Text>
-              <Text style={styles.remarkCopy}>{resultData.remark}</Text>
-            </View>
-
-            <Pressable onPress={() => router.replace('/(tabs)')} style={styles.secondaryButton}>
-              <Feather color={palette.mutedStrong} name="home" size={15} />
-              <Text style={styles.secondaryButtonText}>Back to Home</Text>
-            </Pressable>
-          </View>
-        ) : null}
-      </ScrollView>
-    </SafeAreaView>
+          <SurfaceCard style={styles.remarkCard} tone="muted">
+            <Text style={styles.remarkTitle}>Remark</Text>
+            <Text style={styles.remarkCopy}>{resultData.remark}</Text>
+          </SurfaceCard>
+        </View>
+      ) : null}
+    </AppScreen>
   );
 }
 
-const styles = StyleSheet.create({
-  badge: {
-    alignItems: 'center',
-    backgroundColor: palette.successSoft,
-    borderColor: '#bbf7d0',
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    justifyContent: 'center',
-    minHeight: 44,
-    minWidth: 88,
-    paddingHorizontal: 10,
-  },
-  badgeText: {
-    color: palette.success,
-    fontSize: type.tiny,
-    fontWeight: '700',
-    letterSpacing: 1.2,
-  },
-  content: {
-    alignSelf: 'center',
-    maxWidth: layout.maxWidth,
-    paddingBottom: layout.bottomPadding,
-    paddingHorizontal: layout.screenPaddingWide,
-    width: '100%',
-  },
-  eyebrow: {
-    color: palette.mutedStrong,
-    fontSize: type.label,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-    marginTop: 2,
-    textTransform: 'uppercase',
-  },
-  errorCard: {
-    alignItems: 'flex-start',
-    backgroundColor: palette.dangerSoft,
-    borderColor: '#fecaca',
-    borderRadius: radius.md,
-    borderWidth: 1,
-    marginTop: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-  },
-  errorText: {
-    color: palette.danger,
-    fontSize: type.body,
-  },
-  heroCard: {
-    alignItems: 'flex-start',
-    backgroundColor: palette.panel,
-    borderColor: palette.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 16,
-    ...shadow.card,
-  },
-  loadingCard: {
-    alignItems: 'center',
-    backgroundColor: palette.panel,
-    borderColor: palette.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-  },
-  loadingText: {
-    color: palette.mutedStrong,
-    fontSize: type.body,
-  },
-  meta: {
-    color: palette.muted,
-    fontSize: type.body,
-    marginTop: 8,
-  },
-  remarkCard: {
-    backgroundColor: palette.panel,
-    borderColor: palette.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    marginTop: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-  },
-  remarkCopy: {
-    color: palette.mutedStrong,
-    fontSize: type.bodyLarge,
-    lineHeight: 22,
-    marginTop: 8,
-  },
-  remarkTitle: {
-    color: palette.text,
-    fontSize: type.bodyLarge,
-    fontWeight: '700',
-  },
-  retryButton: {
-    borderColor: '#fecaca',
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    marginTop: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  retryButtonText: {
-    color: palette.danger,
-    fontSize: type.body,
-    fontWeight: '700',
-  },
-  safeArea: {
-    backgroundColor: palette.background,
-    flex: 1,
-  },
-  scoreCard: {
-    alignItems: 'center',
-    backgroundColor: palette.panel,
-    borderColor: palette.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    marginTop: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 22,
-  },
-  scoreLabel: {
-    color: palette.success,
-    fontSize: type.title,
-    fontWeight: '700',
-    marginTop: 8,
-  },
-  scoreMeta: {
-    color: palette.mutedStrong,
-    fontSize: type.body,
-    marginTop: 8,
-  },
-  scoreValue: {
-    color: palette.teal,
-    fontSize: 46,
-    fontWeight: '800',
-  },
-  secondaryButton: {
-    alignItems: 'center',
-    borderColor: palette.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 10,
-    justifyContent: 'center',
-    marginTop: 18,
-    paddingVertical: 13,
-  },
-  secondaryButtonText: {
-    color: palette.mutedStrong,
-    fontSize: type.bodyLarge,
-  },
-  sectionBlock: {
-    borderTopColor: palette.border,
-    borderTopWidth: 1,
-    paddingTop: 18,
-  },
-  sectionLabel: {
-    color: palette.mutedStrong,
-    fontSize: type.label,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-  },
-  title: {
-    color: palette.text,
-    fontSize: type.title,
-    fontWeight: '800',
-    marginTop: 10,
-  },
-});
+function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
+  return StyleSheet.create({
+    badge: {
+      minHeight: 44,
+      minWidth: 88,
+    },
+    content: {
+      paddingBottom: layout.bottomPadding,
+    },
+    errorCard: {
+      marginTop: 12,
+    },
+    eyebrow: {
+      color: colors.mutedStrong,
+      fontSize: type.label,
+      fontWeight: '700',
+      letterSpacing: 0.5,
+      marginTop: 2,
+      textTransform: 'uppercase',
+    },
+    heroCard: {
+      alignItems: 'flex-start',
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginBottom: 20,
+    },
+    heroText: {
+      flex: 1,
+    },
+    loadingCard: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 8,
+    },
+    loadingText: {
+      color: colors.mutedStrong,
+      fontSize: type.body,
+    },
+    meta: {
+      color: colors.muted,
+      fontSize: type.body,
+      marginTop: 8,
+    },
+    remarkCard: {
+      marginTop: 12,
+    },
+    remarkCopy: {
+      color: colors.mutedStrong,
+      fontSize: type.bodyLarge,
+      lineHeight: 22,
+      marginTop: 8,
+    },
+    remarkTitle: {
+      color: colors.text,
+      fontSize: type.bodyLarge,
+      fontWeight: '700',
+    },
+    scoreCard: {
+      alignItems: 'center',
+      marginTop: 16,
+      paddingVertical: 24,
+    },
+    scoreLabel: {
+      color: colors.text,
+      fontSize: type.title,
+      fontWeight: '800',
+      marginTop: 16,
+    },
+    scoreMeta: {
+      color: colors.mutedStrong,
+      fontSize: type.body,
+      marginTop: 8,
+    },
+    scoreRing: {
+      alignItems: 'center',
+      backgroundColor: colors.panel,
+      borderColor: colors.border,
+      borderWidth: 1,
+      borderRadius: radius.pill,
+      height: 128,
+      justifyContent: 'center',
+      width: 128,
+    },
+    scoreValue: {
+      fontSize: 40,
+      fontWeight: '900',
+    },
+    sectionBlock: {
+      borderTopColor: colors.border,
+      borderTopWidth: 1,
+      paddingTop: 18,
+    },
+    sectionLabel: {
+      color: colors.mutedStrong,
+      fontSize: type.label,
+      fontWeight: '700',
+      letterSpacing: 0.5,
+      textTransform: 'uppercase',
+    },
+    title: {
+      color: colors.text,
+      fontSize: type.title,
+      fontWeight: '800',
+      marginTop: 10,
+    },
+  });
+}

@@ -1,7 +1,8 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { StyleSheet, View } from 'react-native';
 
-import { palette, radius } from '@/constants/design';
+import { radius } from '@/constants/design';
+import { useAppTheme } from '@/hooks/use-app-theme';
 
 type BrandMarkProps = {
   accent?: 'teal' | 'warning';
@@ -9,21 +10,23 @@ type BrandMarkProps = {
 };
 
 export function BrandMark({ accent = 'teal', size = 58 }: BrandMarkProps) {
-  const tone = accent === 'warning' ? palette.warning : palette.teal;
+  const { colors } = useAppTheme();
+  const markerColor = accent === 'warning' ? colors.warning : colors.teal;
 
   return (
     <View
       style={[
         styles.shell,
         {
-          borderColor: palette.border,
-          borderRadius: radius.md,
+          backgroundColor: colors.text,
+          borderColor: colors.borderStrong,
+          borderRadius: radius.lg,
           height: size,
           width: size,
         },
       ]}>
-      <MaterialCommunityIcons color={tone} name="shield-lock-outline" size={size * 0.46} />
-      <View style={[styles.dot, { backgroundColor: tone }]} />
+      <MaterialCommunityIcons color={colors.background} name="shield-lock-outline" size={size * 0.46} />
+      <View style={[styles.dot, { backgroundColor: markerColor }]} />
     </View>
   );
 }
@@ -33,13 +36,12 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     height: 6,
     position: 'absolute',
-    right: 9,
-    top: 9,
+    right: 10,
+    top: 10,
     width: 6,
   },
   shell: {
     alignItems: 'center',
-    backgroundColor: palette.panel,
     borderWidth: 1,
     justifyContent: 'center',
   },

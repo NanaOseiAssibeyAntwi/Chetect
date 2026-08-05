@@ -48,6 +48,12 @@ type ExamRow = {
   title: string;
 };
 
+type ExamDetailsRow = ExamRow & {
+  created_at: string;
+  duration_minutes: number;
+  max_students: number;
+};
+
 type ExamTimingRow = {
   id: string;
   scheduled_end: string;
@@ -69,6 +75,10 @@ type ExamQuestionOptionInsertRow = {
   option_order: number;
 };
 
+type ExamQuestionCountRow = {
+  id: string;
+};
+
 type AnalysisSessionRow = {
   final_label: AnalysisLabel;
   latest_observation: string | null;
@@ -83,6 +93,7 @@ type SuspiciousEventRow = {
   created_at: string;
   end_timestamp_seconds: number;
   evidence?: Record<string, unknown> | null;
+  exam_id?: string;
   id: string;
   label: AnalysisLabel;
   max_score: number | null;
@@ -96,8 +107,19 @@ type AnalysisScoreRow = {
   max_score: number | null;
 };
 
-type NotificationRow = {
+type SuspiciousEventCountRow = {
+  exam_id: string;
   id: string;
+};
+
+type NotificationRow = {
+  body?: string;
+  created_at?: string;
+  data?: Record<string, unknown> | null;
+  id: string;
+  notification_type?: string;
+  read_at?: string | null;
+  title?: string;
 };
 
 type InvigilatorLiveOverviewRow = {
@@ -163,6 +185,60 @@ export type InvigilatorProfileData = {
   unreadNotifications: number;
 };
 
+export type InvigilatorNotificationItem = {
+  body: string;
+  createdAt: string;
+  data: Record<string, unknown>;
+  id: string;
+  isRead: boolean;
+  title: string;
+  type: string;
+};
+
+export type InvigilatorAuditHistoryItem = {
+  courseCode: string;
+  examId: string;
+  flaggedSessions: number;
+  integrityScore: number;
+  liveSessions: number;
+  monitoringMode: MonitoringMode;
+  registeredStudents: number;
+  scheduledStart: string;
+  status: ExamStatus;
+  title: string;
+};
+
+export type InvigilatorReportSummaryItem = {
+  courseCode: string;
+  courseTitle: string;
+  examId: string;
+  flaggedSessions: number;
+  integrityScore: number;
+  monitoringMode: MonitoringMode;
+  registeredStudents: number;
+  scheduledEnd: string;
+  scheduledStart: string;
+  status: ExamStatus;
+  suspiciousEventCount: number;
+  title: string;
+};
+
+export type InvigilatorReportsData = {
+  reports: InvigilatorReportSummaryItem[];
+  stats: {
+    averageTrust: number;
+    flagged: number;
+    sessions: number;
+  };
+};
+
+export type InvigilatorReportDetailsData = InvigilatorReportSummaryItem & {
+  durationMinutes: number;
+  maxStudents: number;
+  questionCount: number;
+  suspiciousEvents: InvigilatorSuspiciousEvent[];
+};
+
 export type CreateExamQuestionInput = {
   correctOptionIndex: number;
   options: string[];
@@ -185,6 +261,23 @@ export type CreateExamSessionResult = {
   examId: string;
   missingStudentIds: string[];
   registeredCount: number;
+};
+
+export type InvigilatorSessionDetailsData = {
+  courseCode: string;
+  courseTitle: string;
+  createdAt: string;
+  durationMinutes: number;
+  examId: string;
+  maxStudents: number;
+  missingStudentIds: string[];
+  monitoringMode: MonitoringMode;
+  questionCount: number;
+  registeredCount: number;
+  scheduledEnd: string;
+  scheduledStart: string;
+  status: ExamStatus;
+  title: string;
 };
 
 export type MonitorRiskLevel = 'low' | 'medium' | 'high' | 'critical';
@@ -832,6 +925,235 @@ export async function fetchInvigilatorProfileData(): Promise<InvigilatorProfileD
   };
 }
 
+export async function fetchInvigilatorNotifications(): Promise<InvigilatorNotificationItem[]> {
+  const profile = await getCurrentProfile();
+
+  const { data, error } = await supabase
+    .from('notifications')
+    .select('id, title, body, notification_type, data, read_at, created_at')
+    .eq('user_id', profile.id)
+    .order('created_at', { ascending: false })
+    .limit(100)
+    .returns<NotificationRow[]>();
+
+  if (error) {
+    throw new Error(`Unable to load notifications: ${error.message}`);
+  }
+
+  return (data ?? []).map((row) => ({
+    body: String(row.body ?? '').trim() || 'No notification details available.',
+    createdAt: String(row.created_at ?? ''),
+    data: row.data ?? {},
+    id: row.id,
+    isRead: Boolean(row.read_at),
+    title: String(row.title ?? '').trim() || 'Notification',
+    type: String(row.notification_type ?? '').trim() || 'general',
+  }));
+}
+
+export async function fetchInvigilatorAuditHistory(): Promise<InvigilatorAuditHistoryItem[]> {
+  const profile = await getCurrentProfile();
+  const examIds = await getInvigilatorExamIds(profile.id);
+
+  if (examIds.length === 0) {
+    return [];
+  }
+
+  await syncExamLifecycleStatuses();
+
+  const { data, error } = await supabase
+    .from('invigilator_live_overview')
+    .select(
+      'exam_id, course_code, course_title, exam_title, status, monitoring_mode, scheduled_start, registered_students, live_sessions, flagged_sessions, highest_score'
+    )
+    .in('exam_id', examIds)
+    .neq('status', 'cancelled')
+    .order('scheduled_start', { ascending: false })
+    .returns<InvigilatorLiveOverviewRow[]>();
+
+  if (error) {
+    throw new Error(`Unable to load audit history: ${error.message}`);
+  }
+
+  return (data ?? []).map((row) => {
+    const highestScore = toNumber(row.highest_score);
+
+    return {
+      courseCode: String(row.course_code ?? '').trim().toUpperCase() || 'COURSE',
+      examId: row.exam_id,
+      flaggedSessions: toNumber(row.flagged_sessions),
+      integrityScore: Math.max(0, Math.round(100 - highestScore)),
+      liveSessions: toNumber(row.live_sessions),
+      monitoringMode: row.monitoring_mode,
+      registeredStudents: toNumber(row.registered_students),
+      scheduledStart: row.scheduled_start,
+      status: row.status,
+      title: String(row.exam_title || row.course_title || 'Exam Session'),
+    };
+  });
+}
+
+export async function fetchInvigilatorReports(): Promise<InvigilatorReportsData> {
+  const profile = await getCurrentProfile();
+  const examIds = await getInvigilatorExamIds(profile.id);
+
+  if (examIds.length === 0) {
+    return {
+      reports: [],
+      stats: {
+        averageTrust: 100,
+        flagged: 0,
+        sessions: 0,
+      },
+    };
+  }
+
+  await syncExamLifecycleStatuses();
+
+  const [
+    { data: overviewRows, error: overviewError },
+    { data: examTimingRows, error: timingError },
+    { data: suspiciousRows, error: suspiciousError },
+  ] = await Promise.all([
+    supabase
+      .from('invigilator_live_overview')
+      .select(
+        'exam_id, course_code, course_title, exam_title, status, monitoring_mode, scheduled_start, registered_students, live_sessions, flagged_sessions, highest_score'
+      )
+      .in('exam_id', examIds)
+      .neq('status', 'cancelled')
+      .order('scheduled_start', { ascending: false })
+      .returns<InvigilatorLiveOverviewRow[]>(),
+    supabase
+      .from('exams')
+      .select('id, status, scheduled_start, scheduled_end')
+      .in('id', examIds)
+      .returns<ExamTimingRow[]>(),
+    supabase
+      .from('suspicious_events')
+      .select('id, exam_id')
+      .in('exam_id', examIds)
+      .returns<SuspiciousEventCountRow[]>(),
+  ]);
+
+  if (overviewError) {
+    throw new Error(`Unable to load reports: ${overviewError.message}`);
+  }
+
+  if (timingError) {
+    throw new Error(`Unable to load report timing: ${timingError.message}`);
+  }
+
+  if (suspiciousError) {
+    throw new Error(`Unable to load suspicious report counts: ${suspiciousError.message}`);
+  }
+
+  const timingByExamId = new Map((examTimingRows ?? []).map((row) => [row.id, row]));
+  const suspiciousCountByExamId = new Map<string, number>();
+
+  for (const row of suspiciousRows ?? []) {
+    suspiciousCountByExamId.set(row.exam_id, (suspiciousCountByExamId.get(row.exam_id) ?? 0) + 1);
+  }
+
+  const now = Date.now();
+  const reports = (overviewRows ?? [])
+    .map<InvigilatorReportSummaryItem>((row) => {
+      const timing = timingByExamId.get(row.exam_id);
+      const scheduledStart = timing?.scheduled_start ?? row.scheduled_start;
+      const scheduledEnd = timing?.scheduled_end ?? row.scheduled_start;
+      const effectiveStatus = normalizeExamStatusForCurrentWindow({
+        nowTimestamp: now,
+        scheduledEndIso: scheduledEnd,
+        scheduledStartIso: scheduledStart,
+        status: timing?.status ?? row.status,
+      });
+      const highestScore = toNumber(row.highest_score);
+
+      return {
+        courseCode: String(row.course_code ?? '').trim().toUpperCase() || 'COURSE',
+        courseTitle: String(row.course_title ?? '').trim() || 'Course',
+        examId: row.exam_id,
+        flaggedSessions: toNumber(row.flagged_sessions),
+        integrityScore: Math.max(0, Math.round(100 - highestScore)),
+        monitoringMode: row.monitoring_mode,
+        registeredStudents: toNumber(row.registered_students),
+        scheduledEnd,
+        scheduledStart,
+        status: effectiveStatus,
+        suspiciousEventCount: suspiciousCountByExamId.get(row.exam_id) ?? 0,
+        title: String(row.exam_title || row.course_title || 'Exam Session'),
+      };
+    })
+    .filter((report) => report.status === 'completed')
+    .sort((left, right) => {
+      const leftTime = new Date(left.scheduledEnd).getTime();
+      const rightTime = new Date(right.scheduledEnd).getTime();
+      return (Number.isNaN(rightTime) ? 0 : rightTime) - (Number.isNaN(leftTime) ? 0 : leftTime);
+    });
+
+  const sessions = reports.length;
+  const flagged = reports.reduce((total, report) => total + report.suspiciousEventCount, 0);
+  const averageTrust =
+    sessions > 0
+      ? Math.round(reports.reduce((total, report) => total + report.integrityScore, 0) / sessions)
+      : 100;
+
+  return {
+    reports,
+    stats: {
+      averageTrust,
+      flagged,
+      sessions,
+    },
+  };
+}
+
+export async function fetchInvigilatorReportDetails(
+  examIdInput: string
+): Promise<InvigilatorReportDetailsData> {
+  const examId = examIdInput.trim();
+  if (!examId) {
+    throw new Error('No report selected.');
+  }
+
+  const [{ data: scoreRows, error: scoreError }, sessionDetails, suspiciousEvents] =
+    await Promise.all([
+      supabase
+        .from('analysis_sessions')
+        .select('max_score')
+        .eq('exam_id', examId)
+        .returns<AnalysisScoreRow[]>(),
+      fetchInvigilatorSessionDetails({ examIdInput: examId }),
+      fetchInvigilatorSuspiciousEvents(examId),
+    ]);
+
+  if (scoreError) {
+    throw new Error(`Unable to load report trust scores: ${scoreError.message}`);
+  }
+
+  const scores = (scoreRows ?? []).map((row) => toNumber(row.max_score));
+  const highestScore = scores.length > 0 ? Math.max(...scores) : 0;
+
+  return {
+    courseCode: sessionDetails.courseCode,
+    courseTitle: sessionDetails.courseTitle,
+    durationMinutes: sessionDetails.durationMinutes,
+    examId: sessionDetails.examId,
+    flaggedSessions: suspiciousEvents.length,
+    integrityScore: Math.max(0, Math.round(100 - highestScore)),
+    maxStudents: sessionDetails.maxStudents,
+    monitoringMode: sessionDetails.monitoringMode,
+    questionCount: sessionDetails.questionCount,
+    registeredStudents: sessionDetails.registeredCount,
+    scheduledEnd: sessionDetails.scheduledEnd,
+    scheduledStart: sessionDetails.scheduledStart,
+    status: sessionDetails.status,
+    suspiciousEventCount: suspiciousEvents.length,
+    suspiciousEvents,
+    title: sessionDetails.title,
+  };
+}
+
 export async function fetchInvigilatorMonitorData(
   examIdInput: string
 ): Promise<InvigilatorMonitorData> {
@@ -1187,6 +1509,92 @@ export async function fetchInvigilatorSuspiciousEvents(
 
   mappedEvents.sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
   return mappedEvents;
+}
+
+export async function fetchInvigilatorSessionDetails({
+  examIdInput,
+  missingStudentIds = [],
+}: {
+  examIdInput: string;
+  missingStudentIds?: string[];
+}): Promise<InvigilatorSessionDetailsData> {
+  const examId = examIdInput.trim();
+  if (!examId) {
+    throw new Error('No exam session selected.');
+  }
+
+  const profile = await getCurrentProfile();
+  await syncExamLifecycleStatuses();
+
+  if (profile.role !== 'admin') {
+    const examIds = await getInvigilatorExamIds(profile.id);
+    if (!examIds.includes(examId)) {
+      throw new Error('This session is not assigned to your invigilator account.');
+    }
+  }
+
+  const { data: exam, error: examError } = await supabase
+    .from('exams')
+    .select(
+      'id, title, status, monitoring_mode, scheduled_start, scheduled_end, duration_minutes, max_students, course_id, created_at'
+    )
+    .eq('id', examId)
+    .single<ExamDetailsRow>();
+
+  if (examError || !exam) {
+    throw new Error(`Unable to load session details: ${examError?.message ?? 'Not found.'}`);
+  }
+
+  const [{ data: course, error: courseError }, { data: registrations, error: registrationsError }, { data: questionRows, error: questionsError }] =
+    await Promise.all([
+      supabase.from('courses').select('id, code, title').eq('id', exam.course_id).maybeSingle<CourseRow>(),
+      supabase
+        .from('exam_registrations')
+        .select('student_id, registration_status')
+        .eq('exam_id', exam.id)
+        .returns<ExamRegistrationRow[]>(),
+      supabase
+        .from('exam_questions')
+        .select('id')
+        .eq('exam_id', exam.id)
+        .returns<ExamQuestionCountRow[]>(),
+    ]);
+
+  if (courseError) {
+    throw new Error(`Unable to load course details: ${courseError.message}`);
+  }
+
+  if (registrationsError) {
+    throw new Error(`Unable to load registered students: ${registrationsError.message}`);
+  }
+
+  if (questionsError) {
+    throw new Error(`Unable to load session questions: ${questionsError.message}`);
+  }
+
+  const effectiveStatus = normalizeExamStatusForCurrentWindow({
+    nowTimestamp: Date.now(),
+    scheduledEndIso: exam.scheduled_end,
+    scheduledStartIso: exam.scheduled_start,
+    status: exam.status,
+  });
+
+  return {
+    courseCode: String(course?.code ?? '').trim().toUpperCase() || 'COURSE',
+    courseTitle: String(course?.title ?? '').trim() || exam.title,
+    createdAt: exam.created_at,
+    durationMinutes: toNumber(exam.duration_minutes),
+    examId: exam.id,
+    maxStudents: toNumber(exam.max_students),
+    missingStudentIds,
+    monitoringMode: exam.monitoring_mode,
+    questionCount: (questionRows ?? []).length,
+    registeredCount: (registrations ?? []).length,
+    scheduledEnd: exam.scheduled_end,
+    scheduledStart: exam.scheduled_start,
+    status: effectiveStatus,
+    title: exam.title,
+  };
 }
 
 export async function createExamSession(

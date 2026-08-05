@@ -14,8 +14,9 @@ import {
   View,
 } from 'react-native';
 
-import { entryAccents, type EntryAccent } from '@/components/entry-shell';
-import { font, palette, radius, type } from '@/constants/design';
+import { useEntryAccents, type EntryAccent } from '@/components/entry-shell';
+import { font, radius, type } from '@/constants/design';
+import { useAppTheme } from '@/hooks/use-app-theme';
 
 type EntryHeaderBarProps = {
   accent?: EntryAccent;
@@ -39,12 +40,8 @@ type EntryPrimaryActionProps = {
   onPress?: PressableProps['onPress'];
 };
 
-export function EntryHeaderBar({
-  accent = 'teal',
-  label,
-  onBack,
-}: EntryHeaderBarProps) {
-  const tone = entryAccents[accent];
+export function EntryHeaderBar({ accent = 'teal', label, onBack }: EntryHeaderBarProps) {
+  const tone = useEntryAccents()[accent];
 
   return (
     <View style={styles.headerRow}>
@@ -77,24 +74,26 @@ export function EntryField({
   trailing,
   ...textInputProps
 }: EntryFieldProps) {
-  const tone = entryAccents[accent];
+  const { colors } = useAppTheme();
+  const tone = useEntryAccents()[accent];
 
   return (
     <View style={styles.fieldBlock}>
-      <Text style={styles.fieldLabel}>{label}</Text>
+      <Text style={[styles.fieldLabel, { color: colors.mutedStrong }]}>{label}</Text>
       <View
         style={[
           styles.fieldShell,
           {
+            backgroundColor: colors.panel,
             borderColor: tone.border,
           },
           shellStyle,
         ]}>
         <View style={styles.fieldIcon}>{icon}</View>
         <TextInput
-          placeholderTextColor={palette.muted}
+          placeholderTextColor={colors.muted}
           selectionColor={tone.accent}
-          style={[styles.fieldInput, style as StyleProp<TextStyle>]}
+          style={[styles.fieldInput, { color: colors.text }, style as StyleProp<TextStyle>]}
           {...textInputProps}
         />
         {trailing ? <View style={styles.fieldTrailing}>{trailing}</View> : null}
@@ -110,7 +109,7 @@ export function EntryPrimaryAction({
   label,
   onPress,
 }: EntryPrimaryActionProps) {
-  const tone = entryAccents[accent];
+  const tone = useEntryAccents()[accent];
 
   return (
     <Pressable
@@ -119,17 +118,14 @@ export function EntryPrimaryAction({
       onPress={onPress}
       style={({ pressed }) => [
         styles.primaryButton,
-        {
-          backgroundColor: tone.accent,
-          borderColor: tone.border,
-        },
+        { backgroundColor: tone.accent, borderColor: tone.accent },
         (pressed || disabled || isLoading) ? styles.pressed : null,
       ]}>
-      {isLoading ? (
-        <ActivityIndicator color={tone.accentContrast} size="small" />
-      ) : (
-        <Text style={[styles.primaryButtonText, { color: tone.accentContrast }]}>{label}</Text>
-      )}
+        {isLoading ? (
+          <ActivityIndicator color={tone.accentContrast} size="small" />
+        ) : (
+          <Text style={[styles.primaryButtonText, { color: tone.accentContrast }]}>{label}</Text>
+        )}
     </Pressable>
   );
 }
@@ -152,7 +148,6 @@ const styles = StyleSheet.create({
     width: 22,
   },
   fieldInput: {
-    color: palette.text,
     flex: 1,
     fontFamily: font.body,
     fontSize: type.bodyLarge,
@@ -160,7 +155,6 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   fieldLabel: {
-    color: palette.mutedStrong,
     fontFamily: font.body,
     fontSize: type.tiny,
     fontWeight: '800',
@@ -169,7 +163,6 @@ const styles = StyleSheet.create({
   },
   fieldShell: {
     alignItems: 'center',
-    backgroundColor: palette.panel,
     borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: 'row',
