@@ -14,16 +14,19 @@ type AppScreenProps = {
 };
 
 export function AppScreen({
+  accent = 'neutral',
   children,
   contentContainerStyle,
   edges = ['top', 'bottom'],
   scroll = true,
 }: AppScreenProps) {
   const { colors } = useAppTheme();
+  const accentColor =
+    accent === 'teal' ? colors.teal : accent === 'warning' ? colors.warning : colors.border;
 
   return (
     <SafeAreaView edges={edges} style={[styles.safeArea, { backgroundColor: colors.background }]}>
-      <View pointerEvents="none" style={[styles.topRule, { backgroundColor: colors.border }]} />
+      <View pointerEvents="none" style={[styles.topRule, { backgroundColor: accentColor }]} />
 
       {scroll ? (
         <ScrollView
@@ -60,9 +63,9 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   topRule: {
-    height: 1,
+    height: 2,
     left: 0,
-    opacity: 0.8,
+    opacity: 0.55,
     position: 'absolute',
     right: 0,
     top: 0,

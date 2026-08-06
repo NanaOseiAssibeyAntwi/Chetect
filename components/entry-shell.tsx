@@ -90,7 +90,7 @@ type EntryMetricPillProps = {
 function EntryBackdrop() {
   const { colors } = useAppTheme();
 
-  return <View pointerEvents="none" style={[styles.topRule, { backgroundColor: colors.border }]} />;
+  return <View pointerEvents="none" style={[styles.topRule, { backgroundColor: colors.teal }]} />;
 }
 
 export function EntryScreen({
@@ -297,6 +297,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 18,
     position: 'relative',
+    shadowColor: '#0b3b75',
+    shadowOffset: { height: 4, width: 0 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 2,
   },
   safeArea: {
     flex: 1,
@@ -313,9 +318,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   topRule: {
-    height: 1,
+    height: 2,
     left: 0,
-    opacity: 0.8,
+    opacity: 0.55,
     position: 'absolute',
     right: 0,
     top: 0,

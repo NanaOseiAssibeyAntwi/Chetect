@@ -1,0 +1,5 @@
+env: load .env
+env: export EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_ANON_KEY SUPABASE_SERVICE_ROLE_KEY SUPABASE_DB_URL EXPO_PUBLIC_CHEATING_DETECTOR_URL
+Starting project at C:\Users\USER\Documents\chetect\myApp
+› Port 8081 is being used by another process
+› Skipping dev server

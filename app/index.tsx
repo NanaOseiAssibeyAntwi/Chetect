@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BrandMark } from '@/components/brand-mark';
 import { useEntryAccents, type EntryAccent } from '@/components/entry-shell';
-import { layout, radius, type } from '@/constants/design';
+import { layout, radius, shadow, type } from '@/constants/design';
 import { useAppTheme } from '@/hooks/use-app-theme';
 
 type RoleDefinition = {
@@ -49,7 +49,7 @@ export default function LandingScreen() {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.heroBlock}>
           <View style={styles.brandStage}>
-            <BrandMark accent="teal" size={64} />
+            <BrandMark accent="teal" size={76} />
           </View>
 
           <Text style={styles.brandLabel}>KNUST exam access</Text>
@@ -90,8 +90,8 @@ export default function LandingScreen() {
                   <Text style={styles.roleTitle}>{role.title}</Text>
                   <Text style={styles.roleDescription}>{role.description}</Text>
                 </View>
-                <View style={[styles.roleArrow, { borderColor: colors.borderStrong }]}>
-                  <Feather color={colors.text} name="arrow-right" size={18} />
+                <View style={[styles.roleArrow, { backgroundColor: tone.soft, borderColor: tone.border }]}>
+                  <Feather color={tone.accent} name="arrow-right" size={18} />
                 </View>
               </Pressable>
             );
@@ -118,14 +118,21 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       fontSize: type.body,
       fontWeight: '800',
       letterSpacing: 1.2,
-      marginTop: 20,
+      marginTop: 18,
+      textAlign: 'center',
       textTransform: 'uppercase',
     },
     brandStage: {
       alignItems: 'center',
-      height: 72,
+      alignSelf: 'center',
+      backgroundColor: colors.panel,
+      borderColor: colors.border,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      height: 96,
       justifyContent: 'center',
-      width: 72,
+      width: 96,
+      ...shadow.card,
     },
     content: {
       alignSelf: 'center',
@@ -135,7 +142,7 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       maxWidth: layout.maxWidth,
       paddingBottom: layout.bottomPadding + 6,
       paddingHorizontal: layout.screenPadding,
-      paddingTop: 42,
+      paddingTop: 36,
       width: '100%',
     },
     footerPill: {
@@ -150,6 +157,7 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       marginTop: 18,
       paddingHorizontal: 14,
       paddingVertical: 8,
+      ...shadow.card,
     },
     footerText: {
       color: colors.mutedStrong,
@@ -157,12 +165,12 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       fontWeight: '800',
     },
     heroBlock: {
-      alignItems: 'flex-start',
+      alignItems: 'center',
       borderBottomColor: colors.border,
       borderBottomWidth: 1,
       marginBottom: 24,
-      paddingBottom: 22,
-      paddingTop: 8,
+      paddingBottom: 24,
+      paddingTop: 10,
       width: '100%',
     },
     heroCopy: {
@@ -171,6 +179,7 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       lineHeight: 22,
       marginTop: 8,
       maxWidth: 360,
+      textAlign: 'center',
     },
     heroLine: {
       color: colors.text,
@@ -178,6 +187,7 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       fontWeight: '900',
       letterSpacing: 0,
       lineHeight: type.hero + 8,
+      textAlign: 'center',
     },
     roleAccent: {
       borderBottomLeftRadius: radius.md,
@@ -209,6 +219,7 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       paddingLeft: 22,
       paddingRight: 14,
       paddingTop: 16,
+      ...shadow.card,
     },
     roleCardPressed: {
       opacity: 0.92,
@@ -221,11 +232,11 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     roleIconBox: {
       alignItems: 'center',
-      borderRadius: radius.md,
+      borderRadius: radius.lg,
       borderWidth: 1,
-      height: 52,
+      height: 54,
       justifyContent: 'center',
-      width: 52,
+      width: 54,
     },
     roleList: {
       gap: 14,
@@ -257,13 +268,14 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       flex: 1,
     },
     sectionLabel: {
-      color: colors.muted,
+      color: colors.mutedStrong,
       fontSize: type.body,
       fontWeight: '800',
       letterSpacing: 0.4,
+      textAlign: 'center',
     },
     selectorHeader: {
-      alignItems: 'flex-start',
+      alignItems: 'center',
       marginBottom: 12,
     },
   });

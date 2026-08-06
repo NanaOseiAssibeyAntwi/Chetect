@@ -1,0 +1,8 @@
+env: load .env
+env: export EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_ANON_KEY SUPABASE_SERVICE_ROLE_KEY SUPABASE_DB_URL EXPO_PUBLIC_CHEATING_DETECTOR_URL
+Networking has been disabled
+Starting project at C:\Users\USER\Documents\chetect\myApp
+React Compiler enabled
+Starting Metro Bundler
+Waiting on http://localhost:8082
+Logs for your project will appear below.

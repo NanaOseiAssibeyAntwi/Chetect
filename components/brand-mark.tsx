@@ -11,21 +11,22 @@ type BrandMarkProps = {
 
 export function BrandMark({ accent = 'teal', size = 58 }: BrandMarkProps) {
   const { colors } = useAppTheme();
-  const markerColor = accent === 'warning' ? colors.warning : colors.teal;
+  const shellColor = accent === 'warning' ? colors.warning : colors.teal;
+  const markerColor = accent === 'warning' ? colors.teal : colors.warning;
 
   return (
     <View
       style={[
         styles.shell,
         {
-          backgroundColor: colors.text,
-          borderColor: colors.borderStrong,
+          backgroundColor: shellColor,
+          borderColor: colors.tealGlow,
           borderRadius: radius.lg,
           height: size,
           width: size,
         },
       ]}>
-      <MaterialCommunityIcons color={colors.background} name="shield-lock-outline" size={size * 0.46} />
+      <MaterialCommunityIcons color="#ffffff" name="shield-lock-outline" size={size * 0.46} />
       <View style={[styles.dot, { backgroundColor: markerColor }]} />
     </View>
   );

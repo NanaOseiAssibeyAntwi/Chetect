@@ -1,18 +1,17 @@
 import { useMemo } from 'react';
 
-import { darkPalette, gradients, lightPalette } from '@/constants/design';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { gradients, lightPalette } from '@/constants/design';
 
 export function useAppTheme() {
-  const scheme = useColorScheme() === 'dark' ? 'dark' : 'light';
+  const scheme = 'light';
 
   return useMemo(
     () => ({
-      colors: scheme === 'dark' ? darkPalette : lightPalette,
+      colors: lightPalette,
       gradients: gradients[scheme],
-      isDark: scheme === 'dark',
+      isDark: false,
       scheme,
     }),
-    [scheme]
+    []
   );
 }

@@ -138,7 +138,7 @@ export function AccentBadge({ icon, label, style, textStyle, tone = 'neutral' }:
   > = {
     danger: {
       backgroundColor: colors.dangerSoft,
-      borderColor: 'rgba(244, 55, 107, 0.24)',
+      borderColor: colors.dangerSoft,
       dotColor: colors.danger,
       textColor: colors.danger,
     },
@@ -150,19 +150,19 @@ export function AccentBadge({ icon, label, style, textStyle, tone = 'neutral' }:
     },
     primary: {
       backgroundColor: colors.tealSoft,
-      borderColor: 'rgba(109, 91, 246, 0.24)',
+      borderColor: colors.tealGlow,
       dotColor: colors.teal,
       textColor: colors.teal,
     },
     success: {
       backgroundColor: colors.successSoft,
-      borderColor: 'rgba(18, 184, 134, 0.24)',
+      borderColor: colors.successSoft,
       dotColor: colors.success,
       textColor: colors.success,
     },
     warning: {
       backgroundColor: colors.warningSoft,
-      borderColor: 'rgba(245, 158, 11, 0.24)',
+      borderColor: colors.warningSoft,
       dotColor: colors.warning,
       textColor: colors.warning,
     },
@@ -215,9 +215,9 @@ export function ActionButton({
   const { colors } = useAppTheme();
 
   const buttonTones: Record<ButtonTone, { backgroundColor: string; borderColor: string; textColor: string }> = {
-    accent: { backgroundColor: colors.warning, borderColor: colors.warning, textColor: colors.background },
+    accent: { backgroundColor: colors.warning, borderColor: colors.warning, textColor: '#ffffff' },
     danger: { backgroundColor: 'transparent', borderColor: colors.borderStrong, textColor: colors.danger },
-    primary: { backgroundColor: colors.teal, borderColor: colors.teal, textColor: colors.background },
+    primary: { backgroundColor: colors.teal, borderColor: colors.teal, textColor: '#ffffff' },
     secondary: { backgroundColor: colors.panelRaised, borderColor: colors.borderStrong, textColor: colors.text },
   };
   const presentation = buttonTones[tone];
@@ -287,13 +287,13 @@ export function InlineMessage({ action, description, style, title, tone = 'neutr
 const styles = StyleSheet.create({
   actionButton: {
     alignItems: 'center',
-    borderRadius: radius.sm,
+    borderRadius: radius.md,
     borderWidth: 1.5,
     borderColor: 'transparent',
     flexDirection: 'row',
     gap: 10,
     justifyContent: 'center',
-    minHeight: 52,
+    minHeight: 50,
     paddingHorizontal: 20,
     width: '100%',
   },
@@ -310,7 +310,7 @@ const styles = StyleSheet.create({
     width: undefined,
   },
   actionButtonPressed: {
-    opacity: 0.9,
+    opacity: 0.92,
     transform: [{ scale: 0.98 }],
   },
   actionButtonText: {
@@ -398,6 +398,7 @@ const styles = StyleSheet.create({
     minHeight: 82,
     paddingHorizontal: 14,
     paddingVertical: 14,
+    ...shadow.card,
   },
   metricValue: {
     fontFamily: font.display,
@@ -412,8 +413,8 @@ const styles = StyleSheet.create({
   sectionEyebrow: {
     fontFamily: font.body,
     fontSize: type.tiny,
-    fontWeight: '700',
-    letterSpacing: 0.5,
+    fontWeight: '800',
+    letterSpacing: 0.8,
     textTransform: 'uppercase',
   },
   sectionIntro: {
@@ -433,7 +434,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontFamily: font.display,
-    fontSize: type.display - 2,
+    fontSize: type.display,
     fontWeight: '900',
     letterSpacing: 0,
   },
