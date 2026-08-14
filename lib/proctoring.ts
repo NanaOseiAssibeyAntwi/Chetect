@@ -98,6 +98,22 @@ type DetectorAnalyzeRequestParams = {
   sampleEveryNFrames: number;
 };
 type NativeVideoUploadMode = 'uri' | 'blob';
+type QueuedWebSocketChunk = {
+  clipUri: string;
+  contentType: string;
+  filename: string;
+  maxFrames: number;
+  maxKeyFrames: number;
+  sampleEveryNFrames: number;
+  sequence: number;
+};
+
+type InFlightWebSocketChunk = {
+  filename: string;
+  maxKeyFrames: number;
+  sentAtMs: number;
+  timeout: ReturnType<typeof setTimeout>;
+};
 
 export type ProctoringSessionHandle = {
   aiSessionId: string | null;
@@ -170,7 +186,15 @@ const ANALYSIS_LABEL_WEIGHT: Record<AnalysisLabel, number> = {
   NO_FACE: 3,
   SUSPICIOUS: 4,
 };
-const DEFAULT_DETECTOR_BASE_URL = 'https://cheatingmonitormodel.onrender.com';
+const DEFAULT_DETECTOR_BASE_URL = 'https://rg-cheating-detector-fghefkddd9chh3ch.eastus-01.azurewebsites.net';
+const DEFAULT_DETECTOR_WEBSOCKET_URL =
+  'wss://websocketforchetect-g2ckhweeere5brc2.canadacentral-01.azurewebsites.net/ws/analyze';
+const DEFAULT_WEBSOCKET_MAX_CHUNK_BYTES = 8 * 1024 * 1024;
+const WEBSOCKET_ANALYSIS_TIMEOUT_MS = 60_000;
+const WEBSOCKET_CONNECT_TIMEOUT_MS = 20_000;
+const WEBSOCKET_MAX_QUEUE_LENGTH = 3;
+const WEBSOCKET_PING_INTERVAL_MS = 25_000;
+const WS_OPEN = 1;
 let detectorSummaryEndpointUnsupported = false;
 let resolvedDetectorBaseUrl = '';
 
@@ -199,6 +223,37 @@ function normalizeBaseUrl(urlInput: string) {
 
   const pathSuffix = normalizedPath && normalizedPath !== '/' ? normalizedPath : '';
   return `${protocol}://${authority}${pathSuffix}`;
+}
+
+function normalizeDetectorBaseUrl(urlInput: string) {
+  return normalizeBaseUrl(urlInput).replace(/\/api\/v1\/?$/i, '');
+}
+
+function normalizeDetectorWebSocketUrl(urlInput: string) {
+  const trimmed = String(urlInput ?? '').trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  const compact = trimmed.replace(/\s+/g, '');
+  const protocolMatch = compact.match(/^([a-z]+):\/\//i);
+  const rawProtocol = (protocolMatch?.[1] ?? 'wss').toLowerCase();
+  const protocol =
+    rawProtocol === 'https' ? 'wss' : rawProtocol === 'http' ? 'ws' : rawProtocol;
+  if (protocol !== 'ws' && protocol !== 'wss') {
+    return '';
+  }
+
+  const remainder = protocolMatch ? compact.slice(protocolMatch[0].length) : compact;
+  const authorityAndPath = remainder.split(/[?#]/)[0] ?? '';
+  const slashIndex = authorityAndPath.indexOf('/');
+  const authority = slashIndex >= 0 ? authorityAndPath.slice(0, slashIndex) : authorityAndPath;
+  const path = slashIndex >= 0 ? authorityAndPath.slice(slashIndex).replace(/\/+$/, '') : '';
+  if (!authority) {
+    return '';
+  }
+
+  return `${protocol}://${authority}${path || '/ws/analyze'}`;
 }
 
 function parseExpoHostForDetector() {
@@ -305,6 +360,52 @@ function inferVideoExtensionFromUri(clipUri: string) {
   return '.mp4';
 }
 
+function decodeBase64ToArrayBuffer(base64Input: string) {
+  const normalizedBase64 = base64Input.replace(/\s+/g, '');
+
+  if (typeof globalThis.atob === 'function') {
+    const binary = globalThis.atob(normalizedBase64);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+
+    return bytes.buffer;
+  }
+
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  const cleanBase64 = normalizedBase64.replace(/=+$/, '');
+  const outputLength = Math.floor((cleanBase64.length * 3) / 4);
+  const bytes = new Uint8Array(outputLength);
+  let buffer = 0;
+  let bits = 0;
+  let byteIndex = 0;
+
+  for (let index = 0; index < cleanBase64.length; index += 1) {
+    const value = alphabet.indexOf(cleanBase64[index]);
+    if (value < 0) {
+      throw new Error('Suspicious clip segment contained invalid base64 data.');
+    }
+
+    buffer = (buffer << 6) | value;
+    bits += 6;
+
+    if (bits >= 8) {
+      bits -= 8;
+      if (byteIndex < bytes.length) {
+        bytes[byteIndex] = (buffer >> bits) & 0xff;
+        byteIndex += 1;
+      }
+    }
+  }
+
+  if (byteIndex <= 0) {
+    throw new Error('Suspicious clip segment upload payload was empty.');
+  }
+
+  return bytes.buffer.slice(0, byteIndex);
+}
+
 async function readLocalFileAsArrayBuffer(fileUri: string) {
   const info = await FileSystem.getInfoAsync(fileUri);
   const fileSize = 'size' in info && typeof info.size === 'number' ? info.size : 0;
@@ -320,27 +421,11 @@ async function readLocalFileAsArrayBuffer(fileUri: string) {
     throw new Error('Suspicious clip segment file could not be read for upload.');
   }
 
-  if (typeof globalThis.atob === 'function') {
-    const binary = globalThis.atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let index = 0; index < binary.length; index += 1) {
-      bytes[index] = binary.charCodeAt(index);
-    }
-
-    return bytes.buffer;
-  }
-
-  const fallback = await fetch(`data:application/octet-stream;base64,${base64}`);
-  const fallbackBuffer = await fallback.arrayBuffer();
-  if (fallbackBuffer.byteLength <= 0) {
-    throw new Error('Suspicious clip segment upload payload was empty.');
-  }
-
-  return fallbackBuffer;
+  return decodeBase64ToArrayBuffer(base64);
 }
 
 function rewriteLoopbackConfiguredBaseUrl(configuredUrl: string) {
-  const normalized = normalizeBaseUrl(configuredUrl);
+  const normalized = normalizeDetectorBaseUrl(configuredUrl);
   if (!normalized) {
     return normalized;
   }
@@ -395,7 +480,7 @@ function getDetectorBaseUrlCandidates() {
   const candidates: string[] = [];
 
   const pushCandidate = (value: string) => {
-    const normalized = normalizeBaseUrl(value);
+    const normalized = normalizeDetectorBaseUrl(value);
     if (!normalized) {
       return;
     }
@@ -413,7 +498,7 @@ function getDetectorBaseUrlCandidates() {
 }
 
 function setResolvedDetectorBaseUrl(baseUrl: string) {
-  resolvedDetectorBaseUrl = normalizeBaseUrl(baseUrl);
+  resolvedDetectorBaseUrl = normalizeDetectorBaseUrl(baseUrl);
 }
 
 function isLikelyNetworkFailure(error: unknown) {
@@ -432,7 +517,7 @@ function buildDetectorReachabilityError(endpointPath: string, candidates: string
     .map((baseUrl) => `${baseUrl}${endpointPath}`)
     .join(', ');
   return new Error(
-    `Unable to reach detector service. Tried: ${attempted}. Confirm EXPO_PUBLIC_CHEATING_DETECTOR_URL is set to https://cheatingmonitormodel.onrender.com and restart Expo so the latest env value is loaded.`
+    `Unable to reach detector service. Tried: ${attempted}. Confirm EXPO_PUBLIC_CHEATING_DETECTOR_URL is set to the deployed Chetect model endpoint and restart Expo so the latest env value is loaded.`
   );
 }
 
@@ -477,6 +562,16 @@ async function fetchDetectorAcrossCandidates(params: {
 
 export function getDetectorBaseUrl() {
   return getDetectorBaseUrlCandidates()[0] ?? DEFAULT_DETECTOR_BASE_URL;
+}
+
+export function getDetectorWebSocketUrl() {
+  return (
+    normalizeDetectorWebSocketUrl(
+      process.env.EXPO_PUBLIC_CHEATING_DETECTOR_WS_URL ??
+        process.env.EXPO_PUBLIC_CHEATING_DETECTOR_WEBSOCKET_URL ??
+        ''
+    ) || DEFAULT_DETECTOR_WEBSOCKET_URL
+  );
 }
 
 function asJsonRecord(value: unknown): Record<string, unknown> | null {
@@ -701,7 +796,18 @@ async function getCurrentStudentProfile() {
 }
 
 async function ensureAuthenticatedStorageUploadUser() {
-  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  let sessionResult: Awaited<ReturnType<typeof supabase.auth.getSession>>;
+  try {
+    sessionResult = await supabase.auth.getSession();
+  } catch (error) {
+    throw new Error(
+      `Unable to verify your sign-in session for suspicious clip upload: ${
+        error instanceof Error ? error.message : 'Network request failed.'
+      }`
+    );
+  }
+
+  const { data: sessionData, error: sessionError } = sessionResult;
   if (sessionError) {
     throw new Error('Unable to verify your sign-in session for suspicious clip upload.');
   }
@@ -712,7 +818,18 @@ async function ensureAuthenticatedStorageUploadUser() {
     expiresAtSeconds > 0 && expiresAtSeconds * 1000 <= Date.now() + 60_000;
 
   if (refreshToken && expiresSoon) {
-    const { data: refreshedData, error: refreshError } = await supabase.auth.refreshSession();
+    let refreshResult: Awaited<ReturnType<typeof supabase.auth.refreshSession>>;
+    try {
+      refreshResult = await supabase.auth.refreshSession();
+    } catch (error) {
+      throw new Error(
+        `Your sign-in session could not be refreshed for suspicious clip upload: ${
+          error instanceof Error ? error.message : 'Network request failed.'
+        }`
+      );
+    }
+
+    const { data: refreshedData, error: refreshError } = refreshResult;
     if (refreshError || !refreshedData.session) {
       throw new Error(
         'Your sign-in session expired before the suspicious clip upload. Sign in again and restart the exam session.'
@@ -720,10 +837,21 @@ async function ensureAuthenticatedStorageUploadUser() {
     }
   }
 
+  let userResult: Awaited<ReturnType<typeof supabase.auth.getUser>>;
+  try {
+    userResult = await supabase.auth.getUser();
+  } catch (error) {
+    throw new Error(
+      `Unable to confirm your sign-in session for suspicious clip upload: ${
+        error instanceof Error ? error.message : 'Network request failed.'
+      }`
+    );
+  }
+
   const {
     data: { user },
     error: userError,
-  } = await supabase.auth.getUser();
+  } = userResult;
 
   if (userError || !user) {
     throw new Error(
@@ -1098,6 +1226,724 @@ export async function analyzeVideoSummary(params: {
   return summarizeVideoAnalysisPayload(payload, params.maxKeyFrames);
 }
 
+function getConfiguredWebSocketMaxChunkBytes() {
+  const configured = Number(process.env.EXPO_PUBLIC_CHEATING_DETECTOR_WS_MAX_BYTES);
+  if (Number.isFinite(configured) && configured > 0) {
+    return Math.trunc(configured);
+  }
+
+  return DEFAULT_WEBSOCKET_MAX_CHUNK_BYTES;
+}
+
+async function getLocalVideoChunkBytes(clipUri: string) {
+  if (Platform.OS === 'web') {
+    let response: Response;
+    try {
+      response = await fetch(clipUri);
+    } catch (error) {
+      throw new Error(
+        `Unable to read recorded clip for WebSocket upload: ${
+          error instanceof Error ? error.message : 'Network request failed.'
+        }`
+      );
+    }
+
+    if (!response.ok) {
+      throw new Error('Unable to read recorded clip for WebSocket upload.');
+    }
+
+    const blob = await response.blob();
+    const base64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Unable to convert recorded clip to base64.'));
+      reader.onloadend = () => {
+        const result = String(reader.result ?? '');
+        const [, encoded] = result.split(',', 2);
+        if (!encoded) {
+          reject(new Error('Recorded clip base64 payload was empty.'));
+          return;
+        }
+
+        resolve(encoded);
+      };
+      reader.readAsDataURL(blob);
+    });
+
+    return {
+      base64,
+      size: blob.size,
+    };
+  }
+
+  const info = await FileSystem.getInfoAsync(clipUri);
+  const size = 'size' in info && typeof info.size === 'number' ? info.size : 0;
+  if (!info.exists || info.isDirectory || size <= 0) {
+    throw new Error('Recorded clip is empty or missing.');
+  }
+
+  const base64 = await FileSystem.readAsStringAsync(clipUri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+  if (!base64) {
+    throw new Error('Recorded clip base64 payload was empty.');
+  }
+
+  return {
+    base64,
+    size,
+  };
+}
+
+async function readVideoChunkBase64ForWebSocket(clipUri: string, maxBytes: number) {
+  const { base64, size } = await getLocalVideoChunkBytes(clipUri);
+  if (size > maxBytes) {
+    throw new Error(
+      `Recorded clip is too large for live analysis (${Math.round(size / 1024)} KB). Retrying with the next compressed chunk.`
+    );
+  }
+
+  return base64;
+}
+
+function normalizeDetectorVideoSummaryPayload(
+  value: unknown,
+  options: {
+    fallbackFilename: string;
+    fallbackSessionId: string | null;
+    maxKeyFrames: number;
+  }
+): DetectorVideoSummary {
+  const payload = asJsonRecord(value);
+  if (!payload) {
+    throw new Error('Detector returned an invalid analysis payload.');
+  }
+
+  const nestedSummary = asJsonRecord(payload.summary);
+  const candidate = nestedSummary ?? payload;
+  if (Array.isArray(candidate.frame_results) && !Array.isArray(candidate.key_frames)) {
+    const summary = summarizeVideoAnalysisPayload(
+      candidate as unknown as DetectorVideoAnalysisResponse,
+      options.maxKeyFrames
+    );
+
+    return {
+      ...summary,
+      filename: summary.filename || options.fallbackFilename,
+      session_id: summary.session_id || options.fallbackSessionId,
+    };
+  }
+
+  const rawEvents = Array.isArray(candidate.events) ? candidate.events : [];
+  const events = rawEvents
+    .map((event, index) => asJsonRecord(event) ?? { start_frame_index: index })
+    .map((event, index) => {
+      const startTimestampSeconds = toNumber(event.start_timestamp_seconds);
+      const endTimestampSeconds = Math.max(
+        startTimestampSeconds,
+        toNumber(event.end_timestamp_seconds)
+      );
+
+      return {
+        duration_seconds:
+          typeof event.duration_seconds === 'number' && Number.isFinite(event.duration_seconds)
+            ? Math.max(0, event.duration_seconds)
+            : Math.max(0, endTimestampSeconds - startTimestampSeconds),
+        end_frame_index: Math.max(0, Math.trunc(toNumber(event.end_frame_index))),
+        end_timestamp_seconds: endTimestampSeconds,
+        frame_count: Math.max(1, Math.trunc(toNumber(event.frame_count || 1))),
+        label: String(event.label ?? 'SUSPICIOUS').trim().toUpperCase(),
+        max_score:
+          event.max_score === null || event.max_score === undefined
+            ? null
+            : toNumber(event.max_score),
+        reason: String(event.reason ?? '').trim() || 'Suspicious behavior detected.',
+        severity: String(event.severity ?? '').trim() || null,
+        signal_code: String(event.signal_code ?? '').trim() || null,
+        start_frame_index: Math.max(0, Math.trunc(toNumber(event.start_frame_index || index))),
+        start_timestamp_seconds: startTimestampSeconds,
+      } satisfies DetectorVideoEvent;
+    });
+
+  const alerts = (Array.isArray(candidate.alerts) ? candidate.alerts : [])
+    .map((alert) => asJsonRecord(alert))
+    .filter((alert): alert is Record<string, unknown> => Boolean(alert))
+    .map((alert) => {
+      const startTimestampSeconds = toNumber(alert.start_timestamp_seconds);
+      const endTimestampSeconds = Math.max(
+        startTimestampSeconds,
+        toNumber(alert.end_timestamp_seconds)
+      );
+
+      return {
+        duration_seconds:
+          typeof alert.duration_seconds === 'number' && Number.isFinite(alert.duration_seconds)
+            ? Math.max(0, alert.duration_seconds)
+            : Math.max(0, endTimestampSeconds - startTimestampSeconds),
+        end_timestamp_seconds: endTimestampSeconds,
+        label: String(alert.label ?? 'SUSPICIOUS').trim().toUpperCase(),
+        reason: String(alert.reason ?? '').trim() || 'Suspicious behavior detected.',
+        severity: String(alert.severity ?? '').trim() || null,
+        signal_code: String(alert.signal_code ?? '').trim() || null,
+        start_timestamp_seconds: startTimestampSeconds,
+      } satisfies DetectorVideoAlert;
+    });
+
+  const keyFrames = (Array.isArray(candidate.key_frames) ? candidate.key_frames : [])
+    .map((frame) => asJsonRecord(frame))
+    .filter((frame): frame is Record<string, unknown> => Boolean(frame))
+    .slice(0, Math.max(1, Math.trunc(options.maxKeyFrames)))
+    .map((frame) => ({
+      frame_index: Math.max(0, Math.trunc(toNumber(frame.frame_index))),
+      label: String(frame.label ?? 'NORMAL').trim().toUpperCase(),
+      observations: Array.isArray(frame.observations)
+        ? frame.observations.map((item) => String(item ?? '').trim()).filter(Boolean)
+        : [],
+      score:
+        frame.score === null || frame.score === undefined ? null : toNumber(frame.score),
+      timestamp_seconds: toNumber(frame.timestamp_seconds),
+    }));
+
+  const sessionId =
+    String(candidate.session_id ?? payload.session_id ?? options.fallbackSessionId ?? '').trim() ||
+    null;
+
+  return {
+    average_score: toNumber(candidate.average_score),
+    alerts,
+    detections: Math.max(0, Math.trunc(toNumber(candidate.detections))),
+    duration_seconds: Math.max(0, toNumber(candidate.duration_seconds)),
+    events,
+    filename: String(candidate.filename ?? options.fallbackFilename),
+    final_label: String(candidate.final_label ?? candidate.label ?? 'NORMAL')
+      .trim()
+      .toUpperCase(),
+    fps: Math.max(0, toNumber(candidate.fps)),
+    frames_processed: Math.max(0, Math.trunc(toNumber(candidate.frames_processed))),
+    frames_sampled: Math.max(0, Math.trunc(toNumber(candidate.frames_sampled))),
+    key_frames: keyFrames,
+    max_score: Math.max(0, toNumber(candidate.max_score)),
+    session_id: sessionId,
+    suspicious_event_count: resolveSuspiciousEventCount(
+      candidate.suspicious_event_count,
+      events.length
+    ),
+  };
+}
+
+function toErrorMessage(error: unknown, fallbackMessage: string) {
+  if (error instanceof Error) {
+    const trimmed = error.message.trim();
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+
+  return fallbackMessage;
+}
+
+function getWebSocketPayloadErrorMessage(payload: Record<string, unknown>) {
+  const rawDetail = payload.detail ?? payload.error ?? payload.message;
+  if (typeof rawDetail === 'string' && rawDetail.trim()) {
+    return rawDetail.trim();
+  }
+
+  if (rawDetail && typeof rawDetail === 'object') {
+    try {
+      const serialized = JSON.stringify(rawDetail);
+      if (serialized && serialized !== '{}') {
+        return serialized;
+      }
+    } catch {
+      // Fall through to generic message.
+    }
+  }
+
+  return 'Detector WebSocket returned an error.';
+}
+
+type ProctoringAnalysisSocketOptions = {
+  maxInFlightChunks?: number;
+  maxQueuedChunks?: number;
+  onAnalysis?: (result: {
+    kind: string;
+    processingMs: number | null;
+    sequence: number;
+    summary: DetectorVideoSummary;
+  }) => void;
+  onChunkDropped?: (details: { reason: string; sequence: number }) => void;
+  onConnectionStateChange?: (state: 'connecting' | 'ready' | 'reconnecting' | 'closed') => void;
+  onError?: (message: string) => void;
+  onSessionId?: (sessionId: string) => void;
+  url?: string;
+};
+
+type AnalyzeVideoChunkParams = {
+  clipUri: string;
+  contentType?: string;
+  filename?: string;
+  maxFrames: number;
+  maxKeyFrames: number;
+  sampleEveryNFrames: number;
+};
+
+class ProctoringAnalysisWebSocket {
+  private connectPromise: Promise<void> | null = null;
+  private inFlightChunks = new Map<number, InFlightWebSocketChunk>();
+  private manuallyClosed = false;
+  private maxChunkBytes = getConfiguredWebSocketMaxChunkBytes();
+  private readonly maxInFlightChunks: number;
+  private readonly maxQueuedChunks: number;
+  private pingTimer: ReturnType<typeof setInterval> | null = null;
+  private queue: QueuedWebSocketChunk[] = [];
+  private ready = false;
+  private readyReject: ((error: Error) => void) | null = null;
+  private readyResolve: (() => void) | null = null;
+  private readyTimeout: ReturnType<typeof setTimeout> | null = null;
+  private sendLoopActive = false;
+  private sequence = 0;
+  private sessionId: string | null = null;
+  private socket: WebSocket | null = null;
+  private readonly url: string;
+
+  constructor(private readonly options: ProctoringAnalysisSocketOptions = {}) {
+    this.url = normalizeDetectorWebSocketUrl(options.url ?? '') || getDetectorWebSocketUrl();
+    this.maxInFlightChunks = Math.max(1, Math.trunc(options.maxInFlightChunks ?? 3));
+    this.maxQueuedChunks = Math.max(
+      1,
+      Math.trunc(options.maxQueuedChunks ?? WEBSOCKET_MAX_QUEUE_LENGTH)
+    );
+  }
+
+  getCurrentSessionId() {
+    return this.sessionId;
+  }
+
+  async connect() {
+    if (this.ready && this.socket?.readyState === WS_OPEN) {
+      return;
+    }
+
+    if (this.connectPromise) {
+      return this.connectPromise;
+    }
+
+    this.manuallyClosed = false;
+    this.ready = false;
+    this.options.onConnectionStateChange?.(this.socket ? 'reconnecting' : 'connecting');
+
+    this.connectPromise = new Promise<void>((resolve, reject) => {
+      const socket = new WebSocket(this.url);
+      this.socket = socket;
+      this.readyResolve = resolve;
+      this.readyReject = reject;
+
+      this.readyTimeout = setTimeout(() => {
+        this.failReady(new Error('Detector WebSocket did not send a ready message in time.'));
+        this.closeSocketOnly();
+      }, WEBSOCKET_CONNECT_TIMEOUT_MS);
+
+      socket.onmessage = (event) => {
+        this.handleMessage(event.data);
+      };
+
+      socket.onerror = () => {
+        const error = new Error('Detector WebSocket connection error.');
+        this.options.onError?.(error.message);
+        this.failReady(error);
+        if (!this.manuallyClosed) {
+          this.closeSocketOnly();
+        }
+      };
+
+      socket.onclose = () => {
+        this.handleSocketClose();
+      };
+    }).finally(() => {
+      this.connectPromise = null;
+    });
+
+    return this.connectPromise;
+  }
+
+  sendVideoChunk(params: AnalyzeVideoChunkParams) {
+    if (this.manuallyClosed) {
+      this.options.onError?.('Detector WebSocket is closed.');
+      return null;
+    }
+
+    const sequence = this.sequence + 1;
+    this.sequence = sequence;
+    const filename = params.filename?.trim() || `chunk-${sequence}.mp4`;
+    const contentType = params.contentType?.trim() || 'video/mp4';
+
+    while (this.queue.length >= this.maxQueuedChunks) {
+      const droppedChunk = this.queue.shift();
+      if (droppedChunk) {
+        this.notifyChunkDropped(
+          droppedChunk.sequence,
+          'Detector send queue is full; dropped an older unsent chunk to keep live capture moving.'
+        );
+      }
+    }
+
+    this.queue.push({
+      clipUri: params.clipUri,
+      contentType,
+      filename,
+      maxFrames: Math.max(1, Math.trunc(params.maxFrames)),
+      maxKeyFrames: Math.max(1, Math.trunc(params.maxKeyFrames)),
+      sampleEveryNFrames: Math.max(1, Math.trunc(params.sampleEveryNFrames)),
+      sequence,
+    });
+
+    void this.drainQueue();
+    return sequence;
+  }
+
+  close() {
+    this.manuallyClosed = true;
+    this.stopPing();
+    this.clearReadyTimeout();
+    this.failReady(new Error('Detector WebSocket was closed.'));
+
+    for (const chunk of this.queue) {
+      this.notifyChunkDropped(chunk.sequence, 'Detector WebSocket was closed.');
+    }
+    this.queue = [];
+    this.dropAllInFlightChunks('Detector WebSocket was closed.');
+
+    if (this.socket?.readyState === WS_OPEN) {
+      try {
+        this.socket.send(JSON.stringify({ type: 'close' }));
+      } catch {
+        // Best effort close signal.
+      }
+    }
+
+    this.closeSocketOnly();
+    this.options.onConnectionStateChange?.('closed');
+  }
+
+  private clearReadyTimeout() {
+    if (this.readyTimeout) {
+      clearTimeout(this.readyTimeout);
+      this.readyTimeout = null;
+    }
+  }
+
+  private closeSocketOnly() {
+    const socket = this.socket;
+    this.socket = null;
+    if (!socket) {
+      return;
+    }
+
+    try {
+      socket.close();
+    } catch {
+      // Ignore close errors.
+    }
+  }
+
+  private clearInFlightChunk(sequence: number) {
+    const chunk = this.inFlightChunks.get(sequence);
+    if (!chunk) {
+      return null;
+    }
+
+    clearTimeout(chunk.timeout);
+    this.inFlightChunks.delete(sequence);
+    return chunk;
+  }
+
+  private failReady(error: Error) {
+    this.clearReadyTimeout();
+    if (this.readyReject) {
+      this.readyReject(error);
+      this.readyReject = null;
+      this.readyResolve = null;
+    }
+  }
+
+  private finishReady() {
+    this.ready = true;
+    this.clearReadyTimeout();
+    this.startPing();
+    this.options.onConnectionStateChange?.('ready');
+    if (this.readyResolve) {
+      this.readyResolve();
+      this.readyResolve = null;
+      this.readyReject = null;
+    }
+  }
+
+  private dropAllInFlightChunks(reason: string) {
+    const sequences = [...this.inFlightChunks.keys()];
+    for (const sequence of sequences) {
+      this.dropInFlightChunk(sequence, reason);
+    }
+  }
+
+  private dropInFlightChunk(sequence: number, reason: string) {
+    const chunk = this.clearInFlightChunk(sequence);
+    if (!chunk) {
+      return;
+    }
+
+    this.notifyChunkDropped(sequence, reason);
+  }
+
+  private handleSocketClose() {
+    this.stopPing();
+    this.ready = false;
+    this.connectPromise = null;
+    this.socket = null;
+    this.failReady(new Error('Detector WebSocket closed before it became ready.'));
+
+    if (this.manuallyClosed) {
+      this.options.onConnectionStateChange?.('closed');
+      return;
+    }
+
+    this.options.onConnectionStateChange?.('reconnecting');
+    this.dropAllInFlightChunks('Detector WebSocket disconnected before analysis returned.');
+    if (this.queue.length > 0) {
+      setTimeout(() => {
+        void this.drainQueue();
+      }, 800);
+    }
+  }
+
+  private handleMessage(rawData: unknown) {
+    let payload: Record<string, unknown> | null = null;
+    try {
+      const parsed =
+        typeof rawData === 'string' ? JSON.parse(rawData) : JSON.parse(String(rawData ?? '{}'));
+      payload = asJsonRecord(parsed);
+    } catch {
+      this.options.onError?.('Detector WebSocket sent a malformed message.');
+      return;
+    }
+
+    if (!payload) {
+      return;
+    }
+
+    const type = String(payload.type ?? '').trim().toLowerCase();
+    if (type === 'ready') {
+      this.finishReady();
+      void this.drainQueue();
+      return;
+    }
+
+    if (type === 'session') {
+      this.storeSessionId(payload.session_id);
+      return;
+    }
+
+    if (type === 'pong') {
+      return;
+    }
+
+    if (type === 'error') {
+      const error = new Error(`Detector WebSocket error: ${getWebSocketPayloadErrorMessage(payload)}`);
+      this.options.onError?.(error.message);
+      const sequence = Math.trunc(toNumber(payload.sequence));
+      if (sequence > 0) {
+        this.dropInFlightChunk(sequence, error.message);
+        void this.drainQueue();
+      }
+      return;
+    }
+
+    if (type !== 'analysis') {
+      return;
+    }
+
+    const sequence = Math.trunc(toNumber(payload.sequence));
+    const inFlightChunk = this.clearInFlightChunk(sequence);
+    if (!inFlightChunk) {
+      return;
+    }
+
+    this.storeSessionId(payload.session_id);
+
+    try {
+      const summary = normalizeDetectorVideoSummaryPayload(payload.result, {
+        fallbackFilename: inFlightChunk.filename,
+        fallbackSessionId: this.sessionId,
+        maxKeyFrames: inFlightChunk.maxKeyFrames,
+      });
+      const rawProcessingMs = Number(payload.processing_ms);
+      this.options.onAnalysis?.({
+        kind: String(payload.kind ?? 'video_chunk').trim() || 'video_chunk',
+        processingMs: Number.isFinite(rawProcessingMs) ? Math.max(0, Math.trunc(rawProcessingMs)) : null,
+        sequence,
+        summary,
+      });
+    } catch (error) {
+      const message = toErrorMessage(
+        error,
+        'Detector analysis response was invalid.'
+      );
+      this.options.onError?.(message);
+      this.notifyChunkDropped(sequence, message);
+    }
+
+    void this.drainQueue();
+  }
+
+  private notifyChunkDropped(sequence: number, reason: string) {
+    this.options.onChunkDropped?.({ reason, sequence });
+  }
+
+  private async drainQueue() {
+    if (
+      this.sendLoopActive ||
+      this.queue.length === 0 ||
+      this.inFlightChunks.size >= this.maxInFlightChunks ||
+      this.manuallyClosed
+    ) {
+      return;
+    }
+
+    this.sendLoopActive = true;
+    try {
+      while (
+        this.queue.length > 0 &&
+        this.inFlightChunks.size < this.maxInFlightChunks &&
+        !this.manuallyClosed
+      ) {
+        const nextChunk = this.queue.shift();
+        if (!nextChunk) {
+          break;
+        }
+
+        try {
+          await this.connect();
+          const socket = this.socket;
+          if (!this.ready || !socket || socket.readyState !== WS_OPEN) {
+            throw new Error('Detector WebSocket is not open.');
+          }
+
+          const videoBase64 = await readVideoChunkBase64ForWebSocket(
+            nextChunk.clipUri,
+            this.maxChunkBytes
+          );
+          if (this.manuallyClosed) {
+            this.notifyChunkDropped(nextChunk.sequence, 'Detector WebSocket was closed.');
+            break;
+          }
+
+          const currentSocket = this.socket;
+          if (!this.ready || !currentSocket || currentSocket.readyState !== WS_OPEN) {
+            this.notifyChunkDropped(
+              nextChunk.sequence,
+              'Detector WebSocket disconnected before this chunk could be sent.'
+            );
+            break;
+          }
+
+          const timeout = setTimeout(() => {
+            this.dropInFlightChunk(
+              nextChunk.sequence,
+              'Detector WebSocket analysis timed out for this chunk.'
+            );
+            void this.drainQueue();
+          }, WEBSOCKET_ANALYSIS_TIMEOUT_MS);
+
+          this.inFlightChunks.set(nextChunk.sequence, {
+            filename: nextChunk.filename,
+            maxKeyFrames: nextChunk.maxKeyFrames,
+            sentAtMs: Date.now(),
+            timeout,
+          });
+
+          try {
+            currentSocket.send(
+              JSON.stringify({
+                content_type: nextChunk.contentType,
+                filename: nextChunk.filename,
+                include_frame_results: false,
+                include_landmarks: false,
+                max_frames: nextChunk.maxFrames,
+                response_mode: 'summary',
+                sample_every_n_frames: nextChunk.sampleEveryNFrames,
+                sequence: nextChunk.sequence,
+                type: 'video_chunk',
+                video_base64: videoBase64,
+              })
+            );
+          } catch (sendError) {
+            this.clearInFlightChunk(nextChunk.sequence);
+            throw sendError instanceof Error
+              ? sendError
+              : new Error('Unable to send video chunk over WebSocket.');
+          }
+        } catch (error) {
+          const message = toErrorMessage(error, 'Unable to send video chunk over WebSocket.');
+          this.notifyChunkDropped(nextChunk.sequence, message);
+          this.options.onError?.(message);
+
+          if (!this.ready || this.socket?.readyState !== WS_OPEN) {
+            setTimeout(() => {
+              void this.drainQueue();
+            }, 800);
+            break;
+          }
+        }
+      }
+    } finally {
+      this.sendLoopActive = false;
+      if (
+        this.queue.length > 0 &&
+        this.inFlightChunks.size < this.maxInFlightChunks &&
+        !this.manuallyClosed
+      ) {
+        setTimeout(() => {
+          void this.drainQueue();
+        }, 0);
+      }
+    }
+  }
+
+  private startPing() {
+    this.stopPing();
+    this.pingTimer = setInterval(() => {
+      if (this.socket?.readyState !== WS_OPEN) {
+        return;
+      }
+
+      try {
+        this.socket.send(JSON.stringify({ type: 'ping' }));
+      } catch {
+        // The close handler performs reconnection for future chunks.
+      }
+    }, WEBSOCKET_PING_INTERVAL_MS);
+  }
+
+  private stopPing() {
+    if (this.pingTimer) {
+      clearInterval(this.pingTimer);
+      this.pingTimer = null;
+    }
+  }
+
+  private storeSessionId(value: unknown) {
+    const nextSessionId = String(value ?? '').trim();
+    if (!nextSessionId || nextSessionId === this.sessionId) {
+      return;
+    }
+
+    this.sessionId = nextSessionId;
+    this.options.onSessionId?.(nextSessionId);
+  }
+}
+
+export function createProctoringAnalysisSocket(options?: ProctoringAnalysisSocketOptions) {
+  return new ProctoringAnalysisWebSocket(options);
+}
+
 function buildSessionDeviceInfo(profile: ProfileRow) {
   return {
     appRole: profile.role,
@@ -1148,17 +1994,15 @@ export async function ensureActiveProctoringSession({
   }
 
   if (currentSession) {
-    const previousDetectorSessionId = String(currentSession.backend_session_id ?? '').trim() || null;
-    const detectorSessionId = await createDetectorSession();
-
     const { error: activateError } = await supabase
       .from('analysis_sessions')
       .update({
         analysis_config: {
           detectorBaseUrl: getDetectorBaseUrl(),
+          detectorWebSocketUrl: getDetectorWebSocketUrl(),
           monitoringMode,
         },
-        backend_session_id: detectorSessionId,
+        backend_session_id: null,
         status: 'active',
       })
       .eq('id', currentSession.id);
@@ -1167,12 +2011,8 @@ export async function ensureActiveProctoringSession({
       throw new Error(`Unable to activate proctoring session: ${activateError.message}`);
     }
 
-    if (previousDetectorSessionId && previousDetectorSessionId !== detectorSessionId) {
-      void deleteDetectorSession(previousDetectorSessionId);
-    }
-
     return {
-      aiSessionId: detectorSessionId,
+      aiSessionId: null,
       analysisSessionId: currentSession.id,
       examId: normalizedExamId,
       startedAtIso: currentSession.started_at,
@@ -1180,16 +2020,15 @@ export async function ensureActiveProctoringSession({
     };
   }
 
-  const detectorSessionId = await createDetectorSession();
-
   const { data: insertedSession, error: insertError } = await supabase
     .from('analysis_sessions')
     .insert({
       analysis_config: {
         detectorBaseUrl: getDetectorBaseUrl(),
+        detectorWebSocketUrl: getDetectorWebSocketUrl(),
         monitoringMode,
       },
-      backend_session_id: detectorSessionId,
+      backend_session_id: null,
       device_info: buildSessionDeviceInfo(profile),
       exam_id: normalizedExamId,
       registration_id: registration.id,
@@ -1393,10 +2232,21 @@ export async function uploadSuspiciousClipSegment({
   const mimeType = inferVideoMimeTypeFromExtension(extension);
   const clipBytes = await readLocalFileAsArrayBuffer(clipUri);
 
-  const { error } = await supabase.storage.from(SUSPICIOUS_CLIP_BUCKET).upload(path, clipBytes, {
-    contentType: mimeType,
-    upsert: false,
-  });
+  let uploadResult: Awaited<ReturnType<ReturnType<typeof supabase.storage.from>['upload']>>;
+  try {
+    uploadResult = await supabase.storage.from(SUSPICIOUS_CLIP_BUCKET).upload(path, clipBytes, {
+      contentType: mimeType,
+      upsert: false,
+    });
+  } catch (networkError) {
+    throw new Error(
+      `Unable to upload suspicious clip segment: ${
+        networkError instanceof Error ? networkError.message : 'Network request failed.'
+      }`
+    );
+  }
+
+  const { error } = uploadResult;
 
   if (error) {
     if (/row-level security|violates row-level security|permission denied/i.test(error.message)) {

@@ -20,6 +20,38 @@ if (!supabaseAnonKey) {
 
 const supabaseUrl = rawSupabaseUrl.replace(/\/rest\/v1\/?$/i, '');
 
+function getFetchUrl(input: RequestInfo | URL) {
+  if (typeof input === 'string') {
+    return input;
+  }
+
+  if (input instanceof URL) {
+    return input.toString();
+  }
+
+  return input.url;
+}
+
+const contextualFetch: typeof fetch = async (input, init) => {
+  try {
+    return await fetch(input, init);
+  } catch (error) {
+    const url = getFetchUrl(input);
+    const host = (() => {
+      try {
+        return new URL(url).host;
+      } catch {
+        return url;
+      }
+    })();
+    throw new Error(
+      `Supabase network request failed (${host}): ${
+        error instanceof Error ? error.message : 'Network request failed.'
+      }`
+    );
+  }
+};
+
 const authStorage = {
   getItem: async (key: string) => {
     if (Platform.OS === 'web') {
@@ -65,5 +97,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
     storage: authStorage,
     storageKey: 'chetect.supabase.auth',
+  },
+  global: {
+    fetch: contextualFetch,
   },
 });

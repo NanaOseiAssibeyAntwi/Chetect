@@ -27,12 +27,10 @@ import {
   setNativeStoredItem,
 } from '@/lib/native-key-value-storage';
 import {
-  analyzeVideoSummary,
   buildDetectorObservationSummary,
   buildSuspiciousEvidenceTemplate,
-  createDetectorSession,
   createEmptyAggregateMetrics,
-  deleteDetectorSession,
+  createProctoringAnalysisSocket,
   detectorLabelToAnalysisLabel,
   detectorScoreToRiskLevel,
   endProctoringSession,
@@ -42,6 +40,7 @@ import {
   syncAnalysisSessionMetrics,
   updateSuspiciousEventEvidence,
   uploadSuspiciousClipSegment,
+  type DetectorVideoSummary,
   type ProctoringSessionHandle,
   type SuspiciousEventEvidence,
 } from '@/lib/proctoring';
@@ -55,10 +54,16 @@ import { clearScreenCache, setCachedScreenData } from '@/lib/screen-cache';
 
 const EMPTY_QUESTIONS: StudentExamSessionData['questions'] = [];
 const BEEP_SOUND_ASSET = require('../assets/audio/beep.wav');
-const CLIP_SECONDS = 5;
-const CLIP_READY_MIN_BYTES = 6144;
+const CLIP_SECONDS = 1;
+const CLIP_READY_MIN_BYTES = 2048;
 const DELAYED_DETECTOR_ALERT_COOLDOWN_MS = 4_000;
 const DELAYED_DETECTOR_ALERT_SOUND_MS = 1_800;
+const MAX_PENDING_ANALYSIS_RESULTS = 12;
+const MAX_TRACKED_ANALYSIS_SEGMENTS = 12;
+const ANALYSIS_SEGMENT_RETENTION_MS = 90_000;
+const CLIP_CLEANUP_INTERVAL_MS = 5_000;
+const TRAILING_EVIDENCE_RESOLVE_DELAY_MS = 900;
+const LIVE_VIDEO_BITRATE = 600_000;
 const EVIDENCE_LEAD_SECONDS = 2;
 const EVIDENCE_TRAIL_SECONDS = 2;
 const SEGMENT_PRUNE_WINDOW_SECONDS = 32;
@@ -93,10 +98,20 @@ type AppExitMarker = {
   startedAtMs: number;
 };
 
-type LiveDetectorSummary = Awaited<ReturnType<typeof analyzeVideoSummary>>;
+type LiveDetectorSummary = DetectorVideoSummary;
 type LiveDetectorAlert = LiveDetectorSummary['alerts'][number];
 type LiveDetectorEvent = LiveDetectorSummary['events'][number];
 type LiveDetectorLabel = ReturnType<typeof detectorLabelToAnalysisLabel>;
+type SentAnalysisChunk = {
+  segment: LocalClipSegment;
+  sentAtMs: number;
+};
+type PendingAnalysisResult = {
+  processingMs: number | null;
+  receivedAtMs: number;
+  sequence: number;
+  summary: LiveDetectorSummary;
+};
 
 function normalizeDetectorSeverity(value: string | null | undefined) {
   return String(value ?? '').trim().toLowerCase();
@@ -516,10 +531,10 @@ async function waitForRecordedClipReady(
     return;
   }
 
-  const minBytes = Math.max(2048, Math.trunc(options.minBytes ?? 6144));
-  const pollMs = Math.max(80, Math.trunc(options.pollMs ?? 150));
-  const stableReads = Math.max(2, Math.trunc(options.stableReads ?? 3));
-  const timeoutMs = Math.max(1200, Math.trunc(options.timeoutMs ?? 6000));
+  const minBytes = Math.max(512, Math.trunc(options.minBytes ?? CLIP_READY_MIN_BYTES));
+  const pollMs = Math.max(40, Math.trunc(options.pollMs ?? 80));
+  const stableReads = Math.max(1, Math.trunc(options.stableReads ?? 1));
+  const timeoutMs = Math.max(600, Math.trunc(options.timeoutMs ?? 1800));
   const deadlineMs = Date.now() + timeoutMs;
 
   let lastObservedSize = -1;
@@ -565,19 +580,6 @@ async function waitForRecordedClipReady(
 
 function isLikelyUnfinalizedClipError(message: string) {
   return /not finalized|moov atom|valid video|could not read any frames/i.test(message);
-}
-
-async function waitForClipFinalizationRetryWindow(clipUri: string) {
-  try {
-    await waitForRecordedClipReady(clipUri, {
-      minBytes: CLIP_READY_MIN_BYTES,
-      pollMs: 170,
-      stableReads: 3,
-      timeoutMs: 4200,
-    });
-  } catch {
-    // Best effort: continue and let detector retry surface the final result.
-  }
 }
 
 function randomId() {
@@ -681,39 +683,6 @@ async function clearManagedProctoringClipCache(options: { keepUris?: string[] } 
   }
 }
 
-async function copyClipIntoManagedCache(clipUri: string) {
-  const normalizedClipUri = normalizeClipUri(clipUri);
-  if (!normalizedClipUri || Platform.OS === 'web') {
-    return normalizedClipUri;
-  }
-
-  const cacheRoot = await ensureProctoringClipCacheRoot();
-  if (!cacheRoot) {
-    return normalizedClipUri;
-  }
-
-  const extension = deriveClipExtensionFromUri(normalizedClipUri);
-  const copiedClipUri = `${cacheRoot}segment-${Date.now()}-${randomId()}${extension}`;
-
-  await FileSystem.copyAsync({
-    from: normalizedClipUri,
-    to: copiedClipUri,
-  });
-
-  await waitForRecordedClipReady(copiedClipUri, {
-    minBytes: CLIP_READY_MIN_BYTES,
-    pollMs: 130,
-    stableReads: 2,
-    timeoutMs: 2600,
-  });
-
-  if (normalizedClipUri !== copiedClipUri) {
-    await deleteClipFileIfPresent(normalizedClipUri);
-  }
-
-  return copiedClipUri;
-}
-
 function toTimestampMs(isoValue: string) {
   const timestamp = new Date(isoValue).getTime();
   return Number.isNaN(timestamp) ? null : timestamp;
@@ -757,10 +726,9 @@ function appendEvidenceSegmentIfMissing(
 
 function deriveDetectorSampling(monitoringMode: StudentExamSessionData['monitoringMode']) {
   void monitoringMode;
-  // Match the detector defaults so live app analysis stays comparable to direct API checks.
   return {
-    maxFrames: 30,
-    sampleEveryNFrames: 10,
+    maxFrames: 10,
+    sampleEveryNFrames: 5,
   };
 }
 
@@ -830,13 +798,19 @@ export default function ExamSessionScreen() {
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const appExitHandlingRef = useRef(false);
   const proctoringHandleRef = useRef<ProctoringSessionHandle | null>(null);
+  const analysisSocketRef = useRef<ReturnType<typeof createProctoringAnalysisSocket> | null>(null);
   const proctoringFinalizationInProgressRef = useRef(false);
   const heartbeatRefreshBusyRef = useRef(false);
   const lastSuccessfulAnalysisAtRef = useRef<number | null>(null);
   const startupWatchActiveRef = useRef(false);
   const aggregateMetricsRef = useRef(createEmptyAggregateMetrics());
   const recentSegmentsRef = useRef<LocalClipSegment[]>([]);
+  const analysisSegmentsRef = useRef<Map<number, SentAnalysisChunk>>(new Map());
+  const pendingAnalysisResultsRef = useRef<PendingAnalysisResult[]>([]);
+  const analysisResultProcessingRef = useRef(false);
   const pendingTrailingEvidenceRef = useRef<PendingTrailingEvidence[]>([]);
+  const clipCleanupBusyRef = useRef(false);
+  const lastClipCleanupAtRef = useRef(0);
   const evidenceUploadBlockedRef = useRef(false);
   const liveSuspiciousAlarmRef = useRef<Audio.Sound | null>(null);
   const liveSuspiciousAlarmLoadingRef = useRef(false);
@@ -1051,12 +1025,75 @@ export default function ExamSessionScreen() {
     segment.path = uploadedSegment.path;
     segment.publicUrl = uploadedSegment.publicUrl;
 
-    if (isManagedProctoringClipUri(segment.uri)) {
+    const normalizedSegmentUri = normalizeClipUri(segment.uri);
+    const isPendingAnalysisSegment = [...analysisSegmentsRef.current.values()].some(
+      (trackedChunk) => normalizeClipUri(trackedChunk.segment.uri) === normalizedSegmentUri
+    );
+
+    if (isManagedProctoringClipUri(segment.uri) && !isPendingAnalysisSegment) {
       await deleteClipFileIfPresent(segment.uri);
     }
 
     return uploadedSegment;
   }, []);
+
+  const getRetainedClipUris = useCallback(() => {
+    const retainedUris = new Set<string>();
+    for (const segment of recentSegmentsRef.current) {
+      const normalizedUri = normalizeClipUri(segment.uri);
+      if (normalizedUri) {
+        retainedUris.add(normalizedUri);
+      }
+    }
+
+    for (const trackedChunk of analysisSegmentsRef.current.values()) {
+      const normalizedUri = normalizeClipUri(trackedChunk.segment.uri);
+      if (normalizedUri) {
+        retainedUris.add(normalizedUri);
+      }
+    }
+
+    return [...retainedUris];
+  }, []);
+
+  const pruneTrackedAnalysisSegments = useCallback(() => {
+    const now = Date.now();
+    const entries = [...analysisSegmentsRef.current.entries()].sort(
+      (left, right) => left[1].sentAtMs - right[1].sentAtMs
+    );
+
+    for (const [sequence, trackedChunk] of entries) {
+      if (
+        analysisSegmentsRef.current.size <= MAX_TRACKED_ANALYSIS_SEGMENTS &&
+        now - trackedChunk.sentAtMs <= ANALYSIS_SEGMENT_RETENTION_MS
+      ) {
+        continue;
+      }
+
+      analysisSegmentsRef.current.delete(sequence);
+    }
+  }, []);
+
+  const scheduleManagedClipCleanup = useCallback(
+    (force = false) => {
+      const now = Date.now();
+      if (
+        clipCleanupBusyRef.current ||
+        (!force && now - lastClipCleanupAtRef.current < CLIP_CLEANUP_INTERVAL_MS)
+      ) {
+        return;
+      }
+
+      clipCleanupBusyRef.current = true;
+      lastClipCleanupAtRef.current = now;
+      void clearManagedProctoringClipCache({
+        keepUris: getRetainedClipUris(),
+      }).finally(() => {
+        clipCleanupBusyRef.current = false;
+      });
+    },
+    [getRetainedClipUris]
+  );
 
   const registerRecentSegment = useCallback((segment: LocalClipSegment) => {
     const segmentEndMs = toTimestampMs(segment.endedAtIso) ?? Date.now();
@@ -1077,13 +1114,20 @@ export default function ExamSessionScreen() {
     recentSegmentsRef.current = nextSegments;
 
     const retainedUris = new Set(nextSegments.map((candidate) => normalizeClipUri(candidate.uri)));
-    const droppedManagedUris = previousSegments
+    for (const trackedChunk of analysisSegmentsRef.current.values()) {
+      const trackedUri = normalizeClipUri(trackedChunk.segment.uri);
+      if (trackedUri) {
+        retainedUris.add(trackedUri);
+      }
+    }
+
+    const droppedClipUris = previousSegments
       .map((candidate) => normalizeClipUri(candidate.uri))
       .filter((candidateUri) => candidateUri && !retainedUris.has(candidateUri))
-      .filter((candidateUri) => isManagedProctoringClipUri(candidateUri));
+      .filter(Boolean);
 
-    if (droppedManagedUris.length > 0) {
-      void Promise.all(droppedManagedUris.map((clipUri) => deleteClipFileIfPresent(clipUri)));
+    if (droppedClipUris.length > 0) {
+      void Promise.all(droppedClipUris.map((clipUri) => deleteClipFileIfPresent(clipUri)));
     }
   }, []);
 
@@ -1174,7 +1218,7 @@ export default function ExamSessionScreen() {
     }: {
       clip: LocalClipSegment;
       detectorSessionId: string | null;
-      events: Awaited<ReturnType<typeof analyzeVideoSummary>>['events'];
+      events: LiveDetectorSummary['events'];
     }) => {
       const handle = proctoringHandleRef.current;
       if (!handle || events.length === 0) {
@@ -1278,83 +1322,21 @@ export default function ExamSessionScreen() {
     [uploadSegmentIfNeeded]
   );
 
-  const processRecordedClip = useCallback(
-    async (segment: LocalClipSegment) => {
-      const handle = proctoringHandleRef.current;
-      const activeSession = sessionData;
-      if (!handle || !activeSession) {
+  const processAnalysisResult = useCallback(
+    async ({ processingMs, receivedAtMs, sequence, summary: rawSummary }: PendingAnalysisResult) => {
+      const trackedChunk = analysisSegmentsRef.current.get(sequence);
+      if (!trackedChunk) {
         return;
       }
 
-      const detectorSampling = deriveDetectorSampling(activeSession.monitoringMode);
-      const requestPayload = {
-        aiSessionId: handle.aiSessionId,
-        clipUri: segment.uri,
-        maxFrames: detectorSampling.maxFrames,
-        maxKeyFrames: 5,
-        sampleEveryNFrames: detectorSampling.sampleEveryNFrames,
-      };
-
-      const analyzeWithClipFinalizeRetry = async (overrideSessionId?: string | null) => {
-        const payload =
-          overrideSessionId === undefined
-            ? requestPayload
-            : {
-                ...requestPayload,
-                aiSessionId: overrideSessionId,
-              };
-        try {
-          return buildActionableDetectorSummary(await analyzeVideoSummary(payload));
-        } catch (error) {
-          const message = toErrorMessage(error, 'Live analysis request failed.').toLowerCase();
-          const shouldRetryAfterFinalize =
-            /uploaded file is not a valid video|moov atom|could not read any frames from the uploaded video/.test(
-              message
-            );
-          if (!shouldRetryAfterFinalize) {
-            throw error;
-          }
-
-          await waitForClipFinalizationRetryWindow(payload.clipUri);
-          await sleep(260);
-          return buildActionableDetectorSummary(await analyzeVideoSummary(payload));
-        }
-      };
-
-      let summary: Awaited<ReturnType<typeof analyzeVideoSummary>>;
-      try {
-        summary = await analyzeWithClipFinalizeRetry();
-      } catch (error) {
-        const message = toErrorMessage(error, 'Live analysis request failed.');
-        const shouldReconnect = isLikelyTransientNetworkFailure(message);
-
-        if (!shouldReconnect) {
-          throw error;
-        }
-
-        setProctoringStatus('active');
-        setProctoringMessage('Reconnecting to detector service...');
-
-        try {
-          const refreshedDetectorSessionId = await createDetectorSession();
-          handle.aiSessionId = refreshedDetectorSessionId;
-        } catch {
-          // Retry below even if detector session refresh fails.
-        }
-
-        try {
-          summary = await analyzeWithClipFinalizeRetry(handle.aiSessionId);
-        } catch (retryError) {
-          const retryMessage = toErrorMessage(retryError, message);
-          if (isLikelyTransientNetworkFailure(retryMessage)) {
-            throw new Error(
-              'Detector is unreachable right now. Keep the exam open, confirm EXPO_PUBLIC_CHEATING_DETECTOR_URL points to https://cheatingmonitormodel.onrender.com, and retry.'
-            );
-          }
-          throw retryError;
-        }
+      analysisSegmentsRef.current.delete(sequence);
+      const segment = trackedChunk.segment;
+      const handle = proctoringHandleRef.current;
+      if (!handle) {
+        return;
       }
 
+      const summary = buildActionableDetectorSummary(rawSummary);
       const detectorSessionId = String(summary.session_id ?? '').trim() || handle.aiSessionId;
       if (detectorSessionId && detectorSessionId !== handle.aiSessionId) {
         handle.aiSessionId = detectorSessionId;
@@ -1365,7 +1347,10 @@ export default function ExamSessionScreen() {
       const mergedMetrics = mergeAggregateMetrics(aggregateMetricsRef.current, summary);
       aggregateMetricsRef.current = mergedMetrics;
       const latestWindowLabel = detectorLabelToAnalysisLabel(summary.final_label);
-      const latestWindowFlaggedCount = Math.max(0, Math.trunc(Number(summary.suspicious_event_count ?? 0)));
+      const latestWindowFlaggedCount = Math.max(
+        0,
+        Math.trunc(Number(summary.suspicious_event_count ?? 0))
+      );
       const latestWindowObservationSummary = buildDetectorObservationSummary(summary, 3, {
         includeAlertReasons: true,
         includeKeyFrameObservations: true,
@@ -1374,6 +1359,7 @@ export default function ExamSessionScreen() {
         latestWindowFlaggedCount > 0 ||
         latestWindowLabel === 'NO_FACE' ||
         latestWindowLabel === 'SUSPICIOUS';
+
       setLatestWindowLabel(latestWindowLabel);
       setLatestWindowEventCount(latestWindowFlaggedCount);
       setLatestWindowObservation(latestWindowObservationSummary);
@@ -1382,7 +1368,6 @@ export default function ExamSessionScreen() {
         playDelayedSuspiciousAlertSound();
       }
 
-      registerRecentSegment(segment);
       let syncWarning = false;
       let evidenceUploadWarning = false;
 
@@ -1409,6 +1394,13 @@ export default function ExamSessionScreen() {
           events: summary.events ?? [],
         });
         evidenceUploadWarning = evidenceUploadWarning || suspiciousEventUploadWarning;
+
+        if ((summary.events ?? []).length > 0 || pendingTrailingEvidenceRef.current.length > 0) {
+          for (const candidateSegment of [...recentSegmentsRef.current]) {
+            const trailingEvidenceWarning = await resolvePendingTrailingEvidence(candidateSegment);
+            evidenceUploadWarning = evidenceUploadWarning || trailingEvidenceWarning;
+          }
+        }
       } catch (eventSyncError) {
         const eventSyncMessage = toErrorMessage(
           eventSyncError,
@@ -1434,19 +1426,156 @@ export default function ExamSessionScreen() {
         return;
       }
 
+      const segmentEndedAtMs = toTimestampMs(segment.endedAtIso) ?? Date.now();
+      const confirmedLatencyMs = Math.max(0, receivedAtMs - segmentEndedAtMs);
+      const processingSuffix =
+        processingMs !== null
+          ? ` Model: ${formatDurationSeconds(processingMs)}. Confirmed in ${formatDurationSeconds(confirmedLatencyMs)}.`
+          : ` Confirmed in ${formatDurationSeconds(confirmedLatencyMs)}.`;
       setProctoringMessage(
         latestWindowFlaggedCount > 0
-          ? `${latestWindowFlaggedCount} suspicious event(s) detected in the latest window.${latestWindowObservationSummary ? ` Reasons: ${latestWindowObservationSummary}` : ''}`
-          : 'Live analysis running. No suspicious activity in the latest window.'
+          ? `${latestWindowFlaggedCount} suspicious event(s) detected in the latest confirmed window.${latestWindowObservationSummary ? ` Reasons: ${latestWindowObservationSummary}` : ''}${processingSuffix}`
+          : `Live analysis running. Last confirmed chunk #${sequence}.${processingSuffix}`
       );
     },
-    [
-      persistSuspiciousEvents,
-      playDelayedSuspiciousAlertSound,
-      registerRecentSegment,
-      resolvePendingTrailingEvidence,
-      sessionData,
-    ]
+    [persistSuspiciousEvents, playDelayedSuspiciousAlertSound, resolvePendingTrailingEvidence]
+  );
+
+  const drainAnalysisResults = useCallback(async () => {
+    if (analysisResultProcessingRef.current) {
+      return;
+    }
+
+    analysisResultProcessingRef.current = true;
+    try {
+      while (pendingAnalysisResultsRef.current.length > 0) {
+        const nextResult = pendingAnalysisResultsRef.current.shift();
+        if (!nextResult) {
+          continue;
+        }
+
+        try {
+          await processAnalysisResult(nextResult);
+        } catch (error) {
+          const message = toErrorMessage(error, 'Unable to process live detector result.');
+          if (isLikelyEvidenceUploadFailure(message)) {
+            evidenceUploadBlockedRef.current = true;
+            setProctoringStatus('active');
+            setProctoringMessage(EVIDENCE_UPLOAD_WARNING_MESSAGE);
+            continue;
+          }
+
+          if (isLikelyTransientNetworkFailure(message)) {
+            setProctoringStatus('active');
+            setProctoringMessage(
+              'Live analysis is running, but sync to the server is delayed. Retrying automatically...'
+            );
+            continue;
+          }
+
+          setProctoringStatus('error');
+          setProctoringMessage(message);
+        }
+      }
+    } finally {
+      analysisResultProcessingRef.current = false;
+    }
+  }, [processAnalysisResult]);
+
+  const enqueueAnalysisResult = useCallback(
+    (result: PendingAnalysisResult) => {
+      pendingAnalysisResultsRef.current.push(result);
+      while (pendingAnalysisResultsRef.current.length > MAX_PENDING_ANALYSIS_RESULTS) {
+        pendingAnalysisResultsRef.current.shift();
+      }
+
+      void drainAnalysisResults();
+    },
+    [drainAnalysisResults]
+  );
+
+  const queueRecordedClipForAnalysis = useCallback(
+    (segment: LocalClipSegment) => {
+      const handle = proctoringHandleRef.current;
+      const activeSession = sessionDataRef.current;
+      if (!handle || !activeSession) {
+        return;
+      }
+
+      registerRecentSegment(segment);
+
+      const analysisSocket = analysisSocketRef.current;
+      if (!analysisSocket) {
+        setProctoringStatus('active');
+        setProctoringMessage('Live capture is running. Waiting for detector WebSocket...');
+        return;
+      }
+
+      const detectorSampling = deriveDetectorSampling(activeSession.monitoringMode);
+      const sequence = analysisSocket.sendVideoChunk({
+        clipUri: segment.uri,
+        contentType: 'video/mp4',
+        maxFrames: detectorSampling.maxFrames,
+        maxKeyFrames: 5,
+        sampleEveryNFrames: detectorSampling.sampleEveryNFrames,
+      });
+
+      if (!sequence) {
+        setProctoringStatus('active');
+        setProctoringMessage('Live capture is running. Waiting for detector WebSocket...');
+        return;
+      }
+
+      analysisSegmentsRef.current.set(sequence, {
+        segment,
+        sentAtMs: Date.now(),
+      });
+      pruneTrackedAnalysisSegments();
+
+      setTimeout(() => {
+        if (!shouldMonitorRef.current || !isExamScreenMountedRef.current) {
+          return;
+        }
+
+        void resolvePendingTrailingEvidence(segment)
+          .then((evidenceUploadWarning) => {
+            if (evidenceUploadWarning && isExamScreenMountedRef.current) {
+              setProctoringStatus('active');
+              setProctoringMessage(EVIDENCE_UPLOAD_WARNING_MESSAGE);
+            }
+          })
+          .catch((error) => {
+            const message = toErrorMessage(error, 'Unable to sync suspicious event evidence.');
+            if (!isExamScreenMountedRef.current) {
+              return;
+            }
+
+            if (isLikelyEvidenceUploadFailure(message)) {
+              evidenceUploadBlockedRef.current = true;
+              setProctoringStatus('active');
+              setProctoringMessage(EVIDENCE_UPLOAD_WARNING_MESSAGE);
+              return;
+            }
+
+            if (isLikelyTransientNetworkFailure(message)) {
+              setProctoringStatus('active');
+              setProctoringMessage(
+                'Live analysis is running, but sync to the server is delayed. Retrying automatically...'
+              );
+              return;
+            }
+
+            setProctoringStatus('error');
+            setProctoringMessage(message);
+          });
+      }, TRAILING_EVIDENCE_RESOLVE_DELAY_MS);
+
+      if (lastSuccessfulAnalysisAtRef.current === null) {
+        setProctoringStatus('active');
+        setProctoringMessage('Live capture streaming. Waiting for first detector result...');
+      }
+    },
+    [pruneTrackedAnalysisSegments, registerRecentSegment, resolvePendingTrailingEvidence]
   );
 
   const recordOneClip = useCallback(async (): Promise<LocalClipSegment | null> => {
@@ -1470,13 +1599,19 @@ export default function ExamSessionScreen() {
       let recording: { uri: string } | null = null;
 
       try {
+        const recordingOptions =
+          Platform.OS === 'ios'
+            ? {
+                codec: 'avc1' as const,
+                maxDuration: CLIP_SECONDS,
+              }
+            : {
+                maxDuration: CLIP_SECONDS,
+              };
         recording =
-          (await camera.recordAsync({
-            maxDuration: CLIP_SECONDS,
-            quality: '480p',
-          })) ?? null;
+          (await camera.recordAsync(recordingOptions)) ?? null;
       } catch {
-        // Some devices reject explicit quality presets. Retry with minimal options.
+        // Some devices reject explicit codec options. Retry with minimal options.
         recording =
           (await camera.recordAsync({
             maxDuration: CLIP_SECONDS,
@@ -1488,23 +1623,13 @@ export default function ExamSessionScreen() {
       }
 
       const endedAtIso = new Date().toISOString();
-      // Give the native recorder a moment to finalize container metadata (moov atom).
-      await sleep(240);
       await waitForRecordedClipReady(recording.uri, {
         minBytes: CLIP_READY_MIN_BYTES,
-        pollMs: 150,
-        stableReads: 3,
-        timeoutMs: 6500,
+        pollMs: 50,
+        stableReads: 1,
+        timeoutMs: 1800,
       });
-      let clipUri = normalizeClipUri(recording.uri);
-      if (clipUri) {
-        try {
-          clipUri = await copyClipIntoManagedCache(clipUri);
-        } catch {
-          // Continue with the original URI if managed cache copy fails.
-          clipUri = normalizeClipUri(recording.uri);
-        }
-      }
+      const clipUri = normalizeClipUri(recording.uri);
 
       const durationSeconds = Math.max(
         0.1,
@@ -1547,35 +1672,29 @@ export default function ExamSessionScreen() {
           if (isLikelyUnfinalizedClipError(message)) {
             setProctoringStatus('active');
             setProctoringMessage('Finalizing recorded clip... retrying this window automatically.');
-            await clearManagedProctoringClipCache({
-              keepUris: recentSegmentsRef.current.map((segment) => segment.uri),
-            });
+            scheduleManagedClipCleanup();
             await sleep(320);
             continue;
           }
           setProctoringStatus('error');
           setProctoringMessage(message);
-          await clearManagedProctoringClipCache({
-            keepUris: recentSegmentsRef.current.map((segment) => segment.uri),
-          });
+          scheduleManagedClipCleanup();
           await sleep(700);
           continue;
         }
 
         if (!clip) {
-          await clearManagedProctoringClipCache({
-            keepUris: recentSegmentsRef.current.map((segment) => segment.uri),
-          });
+          scheduleManagedClipCleanup();
           await sleep(160);
           continue;
         }
 
         try {
-          await processRecordedClip(clip);
+          queueRecordedClipForAnalysis(clip);
         } catch (error) {
           const message = toErrorMessage(
             error,
-            'Live detector failed for the latest clip window.'
+            'Live capture failed for the latest clip window.'
           );
           if (isLikelyTransientNetworkFailure(message)) {
             setProctoringStatus('active');
@@ -1595,15 +1714,13 @@ export default function ExamSessionScreen() {
           setProctoringStatus('error');
           setProctoringMessage(message);
         } finally {
-          await clearManagedProctoringClipCache({
-            keepUris: recentSegmentsRef.current.map((segment) => segment.uri),
-          });
+          scheduleManagedClipCleanup();
         }
       }
     } finally {
       monitorLoopActiveRef.current = false;
     }
-  }, [processRecordedClip, recordOneClip]);
+  }, [queueRecordedClipForAnalysis, recordOneClip, scheduleManagedClipCleanup]);
 
   const finalizeProctoring = useCallback(
     async (finalStatus: 'submitted' | 'paused' | 'terminated') => {
@@ -1632,6 +1749,9 @@ export default function ExamSessionScreen() {
           await sleep(120);
         }
 
+        analysisSocketRef.current?.close();
+        analysisSocketRef.current = null;
+
         const handle = proctoringHandleRef.current;
         if (handle) {
           try {
@@ -1643,14 +1763,19 @@ export default function ExamSessionScreen() {
           } catch {
             // Keep exam flow resilient; this can be retried by invigilator review if needed.
           }
-
-          await deleteDetectorSession(handle.aiSessionId);
         }
 
         proctoringHandleRef.current = null;
         heartbeatRefreshBusyRef.current = false;
+        const retainedClipUris = getRetainedClipUris();
+        await Promise.all(retainedClipUris.map((clipUri) => deleteClipFileIfPresent(clipUri)));
+        analysisSegmentsRef.current.clear();
+        pendingAnalysisResultsRef.current = [];
+        analysisResultProcessingRef.current = false;
         pendingTrailingEvidenceRef.current = [];
         recentSegmentsRef.current = [];
+        clipCleanupBusyRef.current = false;
+        lastClipCleanupAtRef.current = 0;
         evidenceUploadBlockedRef.current = false;
         lastSuccessfulAnalysisAtRef.current = null;
         await clearManagedProctoringClipCache();
@@ -1671,7 +1796,7 @@ export default function ExamSessionScreen() {
         proctoringFinalizationInProgressRef.current = false;
       }
     },
-    [stopAllSuspiciousSounds]
+    [getRetainedClipUris, stopAllSuspiciousSounds]
   );
 
   useEffect(() => {
@@ -1683,8 +1808,13 @@ export default function ExamSessionScreen() {
       hasSubmittedRef.current = false;
       timeoutSubmitTriggeredRef.current = false;
       heartbeatRefreshBusyRef.current = false;
+      analysisSegmentsRef.current.clear();
+      pendingAnalysisResultsRef.current = [];
+      analysisResultProcessingRef.current = false;
       recentSegmentsRef.current = [];
       pendingTrailingEvidenceRef.current = [];
+      clipCleanupBusyRef.current = false;
+      lastClipCleanupAtRef.current = 0;
       evidenceUploadBlockedRef.current = false;
       lastSuccessfulAnalysisAtRef.current = null;
       startupWatchActiveRef.current = false;
@@ -1772,7 +1902,78 @@ export default function ExamSessionScreen() {
         });
 
         if (isCancelled) {
-          await deleteDetectorSession(handle.aiSessionId);
+          return;
+        }
+
+        const analysisSocket = createProctoringAnalysisSocket({
+          maxInFlightChunks: 2,
+          maxQueuedChunks: 1,
+          onAnalysis: ({ processingMs, sequence, summary }) => {
+            if (isCancelled || !isExamScreenMountedRef.current) {
+              return;
+            }
+
+            enqueueAnalysisResult({
+              processingMs,
+              receivedAtMs: Date.now(),
+              sequence,
+              summary,
+            });
+          },
+          onChunkDropped: ({ reason, sequence }) => {
+            analysisSegmentsRef.current.delete(sequence);
+            if (isCancelled || !isExamScreenMountedRef.current) {
+              return;
+            }
+
+            if (/closed/i.test(reason)) {
+              return;
+            }
+
+            setProctoringStatus('active');
+            setProctoringMessage(
+              'Live capture is running. Detector is catching up, so an older chunk was skipped.'
+            );
+          },
+          onConnectionStateChange: (state) => {
+            if (isCancelled || !isExamScreenMountedRef.current) {
+              return;
+            }
+
+            if (state === 'connecting') {
+              setProctoringMessage('Connecting to live analysis WebSocket...');
+            } else if (state === 'reconnecting') {
+              setProctoringMessage('Reconnecting to live analysis WebSocket...');
+            } else if (state === 'ready') {
+              setProctoringMessage('Detector WebSocket ready. Camera is preparing for live analysis...');
+            }
+          },
+          onError: (message) => {
+            if (!isCancelled && isExamScreenMountedRef.current) {
+              setProctoringMessage(message);
+            }
+          },
+          onSessionId: (sessionId) => {
+            handle.aiSessionId = sessionId;
+            if (proctoringHandleRef.current?.analysisSessionId === handle.analysisSessionId) {
+              proctoringHandleRef.current.aiSessionId = sessionId;
+            }
+            void syncAnalysisSessionMetrics({
+              analysisSessionId: handle.analysisSessionId,
+              backendSessionId: sessionId,
+              metrics: aggregateMetricsRef.current,
+              status: 'active',
+            }).catch(() => undefined);
+          },
+        });
+
+        analysisSocketRef.current?.close();
+        analysisSocketRef.current = analysisSocket;
+        await analysisSocket.connect();
+        handle.aiSessionId = analysisSocket.getCurrentSessionId();
+
+        if (isCancelled) {
+          analysisSocket.close();
           return;
         }
 
@@ -1784,6 +1985,9 @@ export default function ExamSessionScreen() {
         setProctoringMessage('Camera is preparing for live analysis...');
       } catch (error) {
         if (!isCancelled) {
+          analysisSocketRef.current?.close();
+          analysisSocketRef.current = null;
+          proctoringHandleRef.current = null;
           startupWatchActiveRef.current = false;
           setProctoringStatus('error');
           setProctoringMessage(
@@ -1799,8 +2003,12 @@ export default function ExamSessionScreen() {
 
     return () => {
       isCancelled = true;
+      if (!proctoringHandleRef.current) {
+        analysisSocketRef.current?.close();
+        analysisSocketRef.current = null;
+      }
     };
-  }, [sessionData]);
+  }, [enqueueAnalysisResult, sessionData]);
 
   useEffect(() => {
     if (!sessionData) {
@@ -1867,55 +2075,6 @@ export default function ExamSessionScreen() {
       clearTimeout(startupTimeout);
     };
   }, [proctoringStatus]);
-
-  useEffect(() => {
-    if (!sessionData || !cameraPermission?.granted || !cameraReady || proctoringStatus === 'error') {
-      return;
-    }
-
-    const heartbeatTimer = setInterval(() => {
-      if (heartbeatRefreshBusyRef.current) {
-        return;
-      }
-
-      const handle = proctoringHandleRef.current;
-      if (!handle) {
-        return;
-      }
-
-      const lastSuccessfulAt = lastSuccessfulAnalysisAtRef.current;
-      if (lastSuccessfulAt === null) {
-        return;
-      }
-
-      const staleForMs = Date.now() - lastSuccessfulAt;
-      if (staleForMs < 18_000) {
-        return;
-      }
-
-      heartbeatRefreshBusyRef.current = true;
-      setProctoringStatus('active');
-      setProctoringMessage('Refreshing live detector connection...');
-
-      void (async () => {
-        try {
-          const refreshedDetectorSessionId = await createDetectorSession();
-          if (proctoringHandleRef.current?.analysisSessionId === handle.analysisSessionId) {
-            proctoringHandleRef.current.aiSessionId = refreshedDetectorSessionId;
-            lastSuccessfulAnalysisAtRef.current = Date.now();
-          }
-        } catch {
-          // Keep loop running; request retries happen in clip processing too.
-        } finally {
-          heartbeatRefreshBusyRef.current = false;
-        }
-      })();
-    }, 6_000);
-
-    return () => {
-      clearInterval(heartbeatTimer);
-    };
-  }, [cameraPermission?.granted, cameraReady, proctoringStatus, sessionData]);
 
   useEffect(() => {
     return () => {
@@ -2437,6 +2596,8 @@ export default function ExamSessionScreen() {
                       }}
                       ref={cameraRef}
                       style={styles.cameraPreview}
+                      videoBitrate={LIVE_VIDEO_BITRATE}
+                      videoQuality="480p"
                     />
                   ) : (
                     <View style={styles.cameraPlaceholder}>
