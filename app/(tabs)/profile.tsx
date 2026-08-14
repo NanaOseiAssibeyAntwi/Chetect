@@ -7,6 +7,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { AppScreen } from '@/components/app-screen';
 import { ActionButton, InlineMessage, MetricTile, SurfaceCard } from '@/components/product-ui';
 import { layout, radius, type } from '@/constants/design';
+import { useCachedResource } from '@/hooks/use-cached-resource';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { fetchStudentProfileData, type StudentProfileData } from '@/lib/student-profile';
 import { useSession } from '@/providers/session-provider';
@@ -42,30 +43,24 @@ export default function ProfileScreen() {
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const { signOut } = useSession();
-  const [profileData, setProfileData] = useState<StudentProfileData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [isSigningOut, setIsSigningOut] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-
-  const loadProfile = useCallback(async () => {
-    setIsLoading(true);
-    setErrorMessage('');
-
-    try {
-      const result = await fetchStudentProfileData();
-      setProfileData(result);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Unable to load profile data.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  const {
+    data: profileData,
+    errorMessage,
+    isLoading,
+    refresh: refreshProfile,
+  } = useCachedResource<StudentProfileData | null>({
+    initialData: null,
+    key: 'student.profile',
+    loader: fetchStudentProfileData,
+    maxAgeMs: 60_000,
+  });
 
   useFocusEffect(
     useCallback(() => {
-      void loadProfile();
+      void refreshProfile({ showLoader: profileData === null });
       return undefined;
-    }, [loadProfile])
+    }, [profileData, refreshProfile])
   );
 
   const stats = useMemo(
@@ -152,12 +147,12 @@ export default function ProfileScreen() {
         <InlineMessage
           action={
             <ActionButton
-              compact
-              fullWidth={false}
-              label="Retry"
-              onPress={() => void loadProfile()}
-              tone="danger"
-            />
+                compact
+                fullWidth={false}
+                label="Retry"
+                onPress={() => void refreshProfile({ force: true })}
+                tone="danger"
+              />
           }
           description={errorMessage}
           style={styles.errorMessage}

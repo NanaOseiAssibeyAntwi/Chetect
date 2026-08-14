@@ -1,17 +1,20 @@
 import { Feather } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AppScreen } from '@/components/app-screen';
 import { ActionButton, AccentBadge, InlineMessage, SurfaceCard } from '@/components/product-ui';
 import { layout, radius, type } from '@/constants/design';
+import { useCachedResource } from '@/hooks/use-cached-resource';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import {
   fetchStudentSessionHistory,
   type StudentSessionHistoryItem,
 } from '@/lib/student-profile';
+
+const EMPTY_HISTORY: StudentSessionHistoryItem[] = [];
 
 function formatSubmittedAt(isoDate: string) {
   const date = new Date(isoDate);
@@ -44,29 +47,23 @@ export default function SessionHistoryScreen() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
-  const [history, setHistory] = useState<StudentSessionHistoryItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState('');
-
-  const loadHistory = useCallback(async () => {
-    setIsLoading(true);
-    setErrorMessage('');
-
-    try {
-      const result = await fetchStudentSessionHistory();
-      setHistory(result);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Unable to load session history.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  const {
+    data: history,
+    errorMessage,
+    isLoading,
+    refresh: refreshHistory,
+  } = useCachedResource<StudentSessionHistoryItem[]>({
+    initialData: EMPTY_HISTORY,
+    key: 'student.session-history',
+    loader: fetchStudentSessionHistory,
+    maxAgeMs: 45_000,
+  });
 
   useFocusEffect(
     useCallback(() => {
-      void loadHistory();
+      void refreshHistory();
       return undefined;
-    }, [loadHistory])
+    }, [refreshHistory])
   );
 
   return (
@@ -99,7 +96,7 @@ export default function SessionHistoryScreen() {
               compact
               fullWidth={false}
               label="Retry"
-              onPress={() => void loadHistory()}
+              onPress={() => void refreshHistory({ force: true })}
               tone="danger"
             />
           }

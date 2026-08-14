@@ -1,17 +1,20 @@
 import { Feather } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AppScreen } from '@/components/app-screen';
 import { ActionButton, AccentBadge, InlineMessage, SurfaceCard } from '@/components/product-ui';
 import { layout, radius, type } from '@/constants/design';
+import { useCachedResource } from '@/hooks/use-cached-resource';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import {
   fetchInvigilatorAuditHistory,
   type InvigilatorAuditHistoryItem,
 } from '@/lib/invigilator-sessions';
+
+const EMPTY_HISTORY: InvigilatorAuditHistoryItem[] = [];
 
 function formatScheduledStart(isoDate: string) {
   const date = new Date(isoDate);
@@ -48,29 +51,23 @@ export default function InvigilatorAuditHistoryScreen() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
-  const [history, setHistory] = useState<InvigilatorAuditHistoryItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState('');
-
-  const loadHistory = useCallback(async () => {
-    setIsLoading(true);
-    setErrorMessage('');
-
-    try {
-      const result = await fetchInvigilatorAuditHistory();
-      setHistory(result);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Unable to load audit history.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  const {
+    data: history,
+    errorMessage,
+    isLoading,
+    refresh: refreshHistory,
+  } = useCachedResource<InvigilatorAuditHistoryItem[]>({
+    initialData: EMPTY_HISTORY,
+    key: 'invigilator.audit-history',
+    loader: fetchInvigilatorAuditHistory,
+    maxAgeMs: 45_000,
+  });
 
   useFocusEffect(
     useCallback(() => {
-      void loadHistory();
+      void refreshHistory();
       return undefined;
-    }, [loadHistory])
+    }, [refreshHistory])
   );
 
   return (
@@ -101,7 +98,7 @@ export default function InvigilatorAuditHistoryScreen() {
               compact
               fullWidth={false}
               label="Retry"
-              onPress={() => void loadHistory()}
+              onPress={() => void refreshHistory({ force: true })}
               tone="danger"
             />
           }

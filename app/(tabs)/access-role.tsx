@@ -1,12 +1,13 @@
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AppScreen } from '@/components/app-screen';
 import { ActionButton, InlineMessage, MetricTile, SurfaceCard } from '@/components/product-ui';
 import { layout, radius, type } from '@/constants/design';
+import { useCachedResource } from '@/hooks/use-cached-resource';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { fetchStudentProfileData, type StudentProfileData } from '@/lib/student-profile';
 
@@ -14,29 +15,23 @@ export default function AccessRoleScreen() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
-  const [profileData, setProfileData] = useState<StudentProfileData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState('');
-
-  const loadProfile = useCallback(async () => {
-    setIsLoading(true);
-    setErrorMessage('');
-
-    try {
-      const result = await fetchStudentProfileData();
-      setProfileData(result);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Unable to load access role.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  const {
+    data: profileData,
+    errorMessage,
+    isLoading,
+    refresh: refreshProfile,
+  } = useCachedResource<StudentProfileData | null>({
+    initialData: null,
+    key: 'student.profile',
+    loader: fetchStudentProfileData,
+    maxAgeMs: 60_000,
+  });
 
   useFocusEffect(
     useCallback(() => {
-      void loadProfile();
+      void refreshProfile({ showLoader: profileData === null });
       return undefined;
-    }, [loadProfile])
+    }, [profileData, refreshProfile])
   );
 
   const stats = [
@@ -68,7 +63,7 @@ export default function AccessRoleScreen() {
               compact
               fullWidth={false}
               label="Retry"
-              onPress={() => void loadProfile()}
+              onPress={() => void refreshProfile({ force: true })}
               tone="danger"
             />
           }

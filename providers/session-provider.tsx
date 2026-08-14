@@ -12,6 +12,7 @@ import {
 import { AppState } from 'react-native';
 
 import { signOutAndClearLocalData } from '@/lib/local-app-data';
+import { clearAllScreenCache } from '@/lib/screen-cache';
 import {
   clearStoredSessionProfile,
   readStoredSessionProfile,
@@ -127,6 +128,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
 
     if (!nextSession?.user) {
+      clearAllScreenCache();
       setSession(null);
       setProfile(null);
       void clearStoredSessionProfile();
@@ -137,6 +139,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setSession(nextSession);
 
     const activeUserId = nextSession.user.id;
+    if (sessionRef.current?.user.id && sessionRef.current.user.id !== activeUserId) {
+      clearAllScreenCache();
+    }
+
     const cachedProfile = await readStoredSessionProfile();
     const provisionalProfile = deriveSessionProfileFromSession(nextSession);
 
@@ -249,6 +255,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
+    clearAllScreenCache();
     await signOutAndClearLocalData();
   }, []);
 

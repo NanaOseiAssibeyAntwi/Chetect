@@ -7,6 +7,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { AppScreen } from '@/components/app-screen';
 import { ActionButton, InlineMessage, MetricTile, SurfaceCard } from '@/components/product-ui';
 import { layout, radius, shadow, type } from '@/constants/design';
+import { useCachedResource } from '@/hooks/use-cached-resource';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import {
   fetchInvigilatorProfileData,
@@ -52,30 +53,25 @@ export default function InvigilatorProfileScreen() {
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const { signOut } = useSession();
-  const [profileData, setProfileData] = useState<InvigilatorProfileData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [isSigningOut, setIsSigningOut] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-
-  const loadProfile = useCallback(async () => {
-    setIsLoading(true);
-    setErrorMessage('');
-
-    try {
-      const result = await fetchInvigilatorProfileData();
-      setProfileData(result);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Unable to load profile data.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  const [signOutErrorMessage, setSignOutErrorMessage] = useState('');
+  const {
+    data: profileData,
+    errorMessage,
+    isLoading,
+    refresh: refreshProfile,
+  } = useCachedResource<InvigilatorProfileData | null>({
+    initialData: null,
+    key: 'invigilator.profile',
+    loader: fetchInvigilatorProfileData,
+    maxAgeMs: 60_000,
+  });
 
   useFocusEffect(
     useCallback(() => {
-      void loadProfile();
+      void refreshProfile({ showLoader: profileData === null });
       return undefined;
-    }, [loadProfile])
+    }, [profileData, refreshProfile])
   );
 
   const stats = useMemo(
@@ -124,14 +120,14 @@ export default function InvigilatorProfileScreen() {
   );
 
   const handleSignOut = async () => {
-    setErrorMessage('');
+    setSignOutErrorMessage('');
     setIsSigningOut(true);
 
     try {
       await signOut();
       router.replace('/invigilator-sign-in');
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Unable to sign out. Please try again.');
+      setSignOutErrorMessage(error instanceof Error ? error.message : 'Unable to sign out. Please try again.');
     } finally {
       setIsSigningOut(false);
     }
@@ -152,17 +148,21 @@ export default function InvigilatorProfileScreen() {
         <InlineMessage
           action={
             <ActionButton
-              compact
-              fullWidth={false}
-              label="Retry"
-              onPress={() => void loadProfile()}
-              tone="danger"
-            />
+                compact
+                fullWidth={false}
+                label="Retry"
+                onPress={() => void refreshProfile({ force: true })}
+                tone="danger"
+              />
           }
           description={errorMessage}
           style={styles.errorMessage}
           tone="danger"
         />
+      ) : null}
+
+      {signOutErrorMessage ? (
+        <InlineMessage description={signOutErrorMessage} style={styles.errorMessage} tone="danger" />
       ) : null}
 
       <SurfaceCard style={styles.heroCard}>

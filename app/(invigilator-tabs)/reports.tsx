@@ -1,12 +1,13 @@
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AppScreen } from '@/components/app-screen';
 import { ActionButton, AccentBadge, InlineMessage, MetricTile, SectionIntro, SurfaceCard } from '@/components/product-ui';
 import { layout, radius, type } from '@/constants/design';
+import { useCachedResource } from '@/hooks/use-cached-resource';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import {
   fetchInvigilatorReports,
@@ -49,29 +50,23 @@ export default function InvigilatorReportsScreen() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
-  const [reportsData, setReportsData] = useState<InvigilatorReportsData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState('');
-
-  const loadReports = useCallback(async () => {
-    setIsLoading(true);
-    setErrorMessage('');
-
-    try {
-      const result = await fetchInvigilatorReports();
-      setReportsData(result);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Unable to load reports.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  const {
+    data: reportsData,
+    errorMessage,
+    isLoading,
+    refresh: refreshReports,
+  } = useCachedResource<InvigilatorReportsData | null>({
+    initialData: null,
+    key: 'invigilator.reports',
+    loader: fetchInvigilatorReports,
+    maxAgeMs: 30_000,
+  });
 
   useFocusEffect(
     useCallback(() => {
-      void loadReports();
+      void refreshReports({ showLoader: reportsData === null });
       return undefined;
-    }, [loadReports])
+    }, [refreshReports, reportsData])
   );
 
   const summary = useMemo(
@@ -130,7 +125,7 @@ export default function InvigilatorReportsScreen() {
               compact
               fullWidth={false}
               label="Retry"
-              onPress={() => void loadReports()}
+              onPress={() => void refreshReports({ force: true })}
               tone="danger"
             />
           }

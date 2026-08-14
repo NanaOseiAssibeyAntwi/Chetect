@@ -1,11 +1,12 @@
 import { Feather } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import { AppScreen } from '@/components/app-screen';
 import { ActionButton, AccentBadge, InlineMessage, MetricTile, SurfaceCard } from '@/components/product-ui';
 import { layout, radius, type } from '@/constants/design';
+import { useCachedResource } from '@/hooks/use-cached-resource';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import {
   fetchInvigilatorSessionDetails,
@@ -80,43 +81,29 @@ export default function InvigilatorSessionDetailsScreen() {
     [params.missingStudentIds]
   );
 
-  const [sessionDetails, setSessionDetails] = useState<InvigilatorSessionDetailsData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState('');
+  const loadDetails = useCallback(
+    () =>
+      fetchInvigilatorSessionDetails({
+        examIdInput: examId,
+        missingStudentIds,
+      }),
+    [examId, missingStudentIds]
+  );
+  const {
+    data: sessionDetails,
+    errorMessage,
+    isLoading,
+    refresh: refreshSessionDetails,
+  } = useCachedResource<InvigilatorSessionDetailsData | null>({
+    initialData: null,
+    key: `invigilator.session-details.${examId || 'missing'}.${missingStudentIds.join('|')}`,
+    loader: loadDetails,
+    maxAgeMs: 60_000,
+  });
 
   useEffect(() => {
-    let isMounted = true;
-
-    const loadDetails = async () => {
-      setIsLoading(true);
-      setErrorMessage('');
-
-      try {
-        const result = await fetchInvigilatorSessionDetails({
-          examIdInput: examId,
-          missingStudentIds,
-        });
-
-        if (isMounted) {
-          setSessionDetails(result);
-        }
-      } catch (error) {
-        if (isMounted) {
-          setErrorMessage(error instanceof Error ? error.message : 'Unable to load session details.');
-        }
-      } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    void loadDetails();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [examId, missingStudentIds]);
+    void refreshSessionDetails({ showLoader: sessionDetails === null });
+  }, [refreshSessionDetails, sessionDetails]);
 
   const metrics = useMemo(
     () => [
@@ -169,8 +156,12 @@ export default function InvigilatorSessionDetailsScreen() {
             <ActionButton
               compact
               fullWidth={false}
-              label="Back to dashboard"
-              onPress={() => router.replace('/(invigilator-tabs)')}
+              label={sessionDetails ? 'Retry' : 'Back to dashboard'}
+              onPress={() =>
+                sessionDetails
+                  ? void refreshSessionDetails({ force: true })
+                  : router.replace('/(invigilator-tabs)')
+              }
               tone="danger"
             />
           }
@@ -180,7 +171,7 @@ export default function InvigilatorSessionDetailsScreen() {
         />
       ) : null}
 
-      {!isLoading && !errorMessage && sessionDetails ? (
+      {!isLoading && sessionDetails ? (
         <>
           <View style={styles.metricRow}>
             {metrics.map((metric) => (

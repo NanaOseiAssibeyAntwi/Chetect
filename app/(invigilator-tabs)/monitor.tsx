@@ -18,6 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { layout, radius, shadow, type } from '@/constants/design';
 import { ActionButton, InlineMessage, MetricTile } from '@/components/product-ui';
 import { useAppTheme } from '@/hooks/use-app-theme';
+import { useCachedResource } from '@/hooks/use-cached-resource';
 import {
   fetchInvigilatorMonitorData,
   fetchInvigilatorSuspiciousEvents,
@@ -30,6 +31,18 @@ import { supabase } from '@/lib/supabase';
 
 const filters = ['all', 'flagged', 'critical'] as const;
 type MonitorFilter = (typeof filters)[number];
+const EMPTY_MONITOR_STUDENTS: InvigilatorMonitorStudent[] = [];
+const EMPTY_SUSPICIOUS_EVENTS: InvigilatorSuspiciousEvent[] = [];
+const MONITOR_RISK_WEIGHT: Record<MonitorRiskLevel, number> = {
+  critical: 4,
+  high: 3,
+  low: 1,
+  medium: 2,
+};
+type MonitorFilterGroups = {
+  criticalStudentIds: Set<string>;
+  flaggedStudentIds: Set<string>;
+};
 
 function getRiskPresentation(riskLevel: MonitorRiskLevel, colors: ReturnType<typeof useAppTheme>['colors']) {
   if (riskLevel === 'critical') {
@@ -86,13 +99,62 @@ function getFilterLabel(filter: MonitorFilter) {
   return filter.toUpperCase();
 }
 
-function applyFilter(students: InvigilatorMonitorStudent[], filter: MonitorFilter) {
+function getHigherRisk(left: MonitorRiskLevel | undefined, right: MonitorRiskLevel) {
+  if (!left) {
+    return right;
+  }
+
+  return MONITOR_RISK_WEIGHT[right] > MONITOR_RISK_WEIGHT[left] ? right : left;
+}
+
+function createMonitorFilterGroups(
+  students: InvigilatorMonitorStudent[],
+  events: InvigilatorSuspiciousEvent[]
+): MonitorFilterGroups {
+  const highestEventRiskByStudentId = new Map<string, MonitorRiskLevel>();
+
+  for (const eventRow of events) {
+    highestEventRiskByStudentId.set(
+      eventRow.studentId,
+      getHigherRisk(highestEventRiskByStudentId.get(eventRow.studentId), eventRow.riskLevel)
+    );
+  }
+
+  const criticalStudentIds = new Set<string>();
+  const flaggedStudentIds = new Set<string>();
+
+  for (const student of students) {
+    const eventRisk = highestEventRiskByStudentId.get(student.studentId);
+    const isCritical =
+      eventRisk === 'critical' || (!eventRisk && (student.isCritical || student.riskLevel === 'critical'));
+    const isFlagged =
+      Boolean(eventRisk && eventRisk !== 'critical') ||
+      (!eventRisk && (student.isFlagged || student.riskLevel === 'medium' || student.riskLevel === 'high'));
+
+    if (isCritical) {
+      criticalStudentIds.add(student.studentId);
+    } else if (isFlagged) {
+      flaggedStudentIds.add(student.studentId);
+    }
+  }
+
+  return {
+    criticalStudentIds,
+    flaggedStudentIds,
+  };
+}
+
+function applyFilter(
+  students: InvigilatorMonitorStudent[],
+  filter: MonitorFilter,
+  groups: MonitorFilterGroups
+) {
   if (filter === 'flagged') {
-    return students.filter((student) => student.isFlagged);
+    return students.filter((student) => groups.flaggedStudentIds.has(student.studentId));
   }
 
   if (filter === 'critical') {
-    return students.filter((student) => student.isCritical);
+    return students.filter((student) => groups.criticalStudentIds.has(student.studentId));
   }
 
   return students;
@@ -198,13 +260,47 @@ export default function InvigilatorMonitorScreen() {
     () => (Array.isArray(params.examId) ? params.examId[0] : params.examId) ?? '',
     [params.examId]
   );
-  const [monitorData, setMonitorData] = useState<InvigilatorMonitorData | null>(null);
+  const loadMonitorData = useCallback(() => {
+    if (!examId) {
+      return Promise.reject(new Error('Open a session from the dashboard to monitor students.'));
+    }
+
+    return fetchInvigilatorMonitorData(examId);
+  }, [examId]);
+  const loadSuspiciousEvents = useCallback(() => {
+    if (!examId) {
+      return Promise.reject(new Error('Open a session from the dashboard to monitor students.'));
+    }
+
+    return fetchInvigilatorSuspiciousEvents(examId);
+  }, [examId]);
+  const {
+    data: monitorData,
+    errorMessage: monitorErrorMessage,
+    isLoading,
+    isRefreshing: isMonitorRefreshing,
+    refresh: refreshMonitorData,
+  } = useCachedResource<InvigilatorMonitorData | null>({
+    enabled: Boolean(examId),
+    initialData: null,
+    key: `invigilator.monitor.${examId || 'missing'}`,
+    loader: loadMonitorData,
+    maxAgeMs: 5_000,
+  });
+  const {
+    data: suspiciousEvents,
+    errorMessage: eventsErrorMessage,
+    isLoading: isEventsLoading,
+    isRefreshing: isEventsRefreshing,
+    refresh: refreshSuspiciousEvents,
+  } = useCachedResource<InvigilatorSuspiciousEvent[]>({
+    enabled: Boolean(examId),
+    initialData: EMPTY_SUSPICIOUS_EVENTS,
+    key: `invigilator.monitor-events.${examId || 'missing'}`,
+    loader: loadSuspiciousEvents,
+    maxAgeMs: 5_000,
+  });
   const [activeFilter, setActiveFilter] = useState<MonitorFilter>('all');
-  const [isLoading, setIsLoading] = useState(true);
-  const [isEventsLoading, setIsEventsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [suspiciousEvents, setSuspiciousEvents] = useState<InvigilatorSuspiciousEvent[]>([]);
   const [openEventId, setOpenEventId] = useState('');
   const [clipPlaybackErrors, setClipPlaybackErrors] = useState<Record<string, string>>({});
   const [clipLocalUris, setClipLocalUris] = useState<Record<string, string>>({});
@@ -212,41 +308,25 @@ export default function InvigilatorMonitorScreen() {
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clipLocalUrisRef = useRef<Record<string, string>>({});
   const clipDownloadsInProgressRef = useRef<Record<string, boolean>>({});
+  const isRefreshing = isMonitorRefreshing || isEventsRefreshing;
+  const errorMessage =
+    (!examId ? 'Open a session from the dashboard to monitor students.' : '') ||
+    monitorErrorMessage ||
+    eventsErrorMessage;
 
   const loadAll = useCallback(
-    async (showLoading = true) => {
+    async (showLoading = true, force = false) => {
       if (!examId) {
-        setMonitorData(null);
-        setSuspiciousEvents([]);
-        setErrorMessage('Open a session from the dashboard to monitor students.');
-        setIsLoading(false);
-        setIsEventsLoading(false);
         return;
       }
 
-      if (showLoading) {
-        setIsLoading(true);
-        setIsEventsLoading(true);
-      }
-
-      setErrorMessage('');
-
-      try {
-        const [monitorResult, eventsResult] = await Promise.all([
-          fetchInvigilatorMonitorData(examId),
-          fetchInvigilatorSuspiciousEvents(examId),
-        ]);
-        setMonitorData(monitorResult);
-        setSuspiciousEvents(eventsResult);
-        setClipPlaybackErrors({});
-      } catch (error) {
-        setErrorMessage(error instanceof Error ? error.message : 'Unable to load monitor data.');
-      } finally {
-        setIsLoading(false);
-        setIsEventsLoading(false);
-      }
+      const refreshOptions = showLoading ? { force } : { force, showLoader: false };
+      await Promise.all([
+        refreshMonitorData(refreshOptions),
+        refreshSuspiciousEvents(refreshOptions),
+      ]);
     },
-    [examId]
+    [examId, refreshMonitorData, refreshSuspiciousEvents]
   );
 
   useFocusEffect(
@@ -257,13 +337,7 @@ export default function InvigilatorMonitorScreen() {
   );
 
   const handleRefresh = useCallback(async () => {
-    setIsRefreshing(true);
-
-    try {
-      await loadAll(false);
-    } finally {
-      setIsRefreshing(false);
-    }
+    await loadAll(false, true);
   }, [loadAll]);
 
   useEffect(() => {
@@ -369,7 +443,7 @@ export default function InvigilatorMonitorScreen() {
       }
 
       refreshTimerRef.current = setTimeout(() => {
-        void loadAll(false);
+        void loadAll(false, true);
       }, 300);
     };
 
@@ -405,10 +479,33 @@ export default function InvigilatorMonitorScreen() {
     };
   }, [examId, loadAll]);
 
-  const filteredStudents = useMemo(
-    () => applyFilter(monitorData?.students ?? [], activeFilter),
-    [activeFilter, monitorData?.students]
+  const students = useMemo(
+    () => monitorData?.students ?? EMPTY_MONITOR_STUDENTS,
+    [monitorData?.students]
   );
+  const filterGroups = useMemo(
+    () => createMonitorFilterGroups(students, suspiciousEvents),
+    [students, suspiciousEvents]
+  );
+  const filteredStudentGroups = useMemo(
+    () =>
+      ({
+        all: applyFilter(students, 'all', filterGroups),
+        critical: applyFilter(students, 'critical', filterGroups),
+        flagged: applyFilter(students, 'flagged', filterGroups),
+      }) satisfies Record<MonitorFilter, InvigilatorMonitorStudent[]>,
+    [filterGroups, students]
+  );
+  const filterCounts = useMemo(
+    () =>
+      ({
+        all: filteredStudentGroups.all.length,
+        critical: filteredStudentGroups.critical.length,
+        flagged: filteredStudentGroups.flagged.length,
+      }) satisfies Record<MonitorFilter, number>,
+    [filteredStudentGroups]
+  );
+  const filteredStudents = filteredStudentGroups[activeFilter];
 
   const statusLabel = monitorData ? getExamStatusLabel(monitorData.examStatus) : 'SESSION';
   const statusColor = monitorData ? getExamStatusColor(monitorData.examStatus, colors) : colors.muted;
@@ -486,7 +583,7 @@ export default function InvigilatorMonitorScreen() {
                 compact
                 fullWidth={false}
                 label="Retry"
-                onPress={() => void loadAll(true)}
+                onPress={() => void loadAll(true, true)}
                 tone="danger"
               />
             }
@@ -507,6 +604,9 @@ export default function InvigilatorMonitorScreen() {
                 style={[styles.filterItem, active ? styles.filterItemActive : null]}>
                 <Text style={[styles.filterText, active ? styles.filterTextActive : null]}>
                   {getFilterLabel(filter)}
+                </Text>
+                <Text style={[styles.filterCountText, active ? styles.filterTextActive : null]}>
+                  {filterCounts[filter]}
                 </Text>
               </Pressable>
             );
@@ -962,6 +1062,12 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       fontSize: type.label,
       fontWeight: '700',
       letterSpacing: 0.5,
+    },
+    filterCountText: {
+      color: colors.muted,
+      fontSize: type.tiny,
+      fontWeight: '800',
+      marginTop: 2,
     },
     filterTextActive: {
       color: colors.teal,

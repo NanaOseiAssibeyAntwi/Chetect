@@ -1,10 +1,11 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import { AppScreen } from '@/components/app-screen';
 import { AccentBadge, ActionButton, InlineMessage, SurfaceCard } from '@/components/product-ui';
 import { layout, radius, type } from '@/constants/design';
+import { useCachedResource } from '@/hooks/use-cached-resource';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { fetchStudentExamResult, type StudentExamResultData } from '@/lib/student-exam';
 
@@ -44,41 +45,23 @@ export default function ResultsScreen() {
   const params = useLocalSearchParams<{ examId?: string }>();
   const examId = typeof params.examId === 'string' ? params.examId : undefined;
 
-  const [resultData, setResultData] = useState<StudentExamResultData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState('');
+  const resultCacheKey = `student.result.${examId ?? 'latest'}`;
+  const loadResult = useCallback(() => fetchStudentExamResult(examId), [examId]);
+  const {
+    data: resultData,
+    errorMessage,
+    isLoading,
+    refresh: refreshResult,
+  } = useCachedResource<StudentExamResultData | null>({
+    initialData: null,
+    key: resultCacheKey,
+    loader: loadResult,
+    maxAgeMs: 5 * 60_000,
+  });
 
   useEffect(() => {
-    let isMounted = true;
-
-    const loadResult = async () => {
-      setIsLoading(true);
-      setErrorMessage('');
-
-      try {
-        const result = await fetchStudentExamResult(examId);
-        if (!isMounted) {
-          return;
-        }
-
-        setResultData(result);
-      } catch (error) {
-        if (isMounted) {
-          setErrorMessage(error instanceof Error ? error.message : 'Unable to load exam result.');
-        }
-      } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    void loadResult();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [examId]);
+    void refreshResult({ showLoader: resultData === null });
+  }, [refreshResult, resultData]);
 
   const performanceLabel = useMemo(
     () => getPerformanceLabel(resultData?.scorePercent ?? 0),
@@ -104,7 +87,8 @@ export default function ResultsScreen() {
       : isLoading
       ? 'Loading submission time...'
       : 'Submission time unavailable';
-  const headerTitle = normalizedExamTitle || (isLoading ? 'Loading result...' : 'Result unavailable');
+  const headerTitle =
+    normalizedExamTitle || (isLoading && examId ? 'Submission received' : isLoading ? 'Loading result...' : 'Result unavailable');
   const headerMeta = normalizedCourseCode
     ? `${normalizedCourseCode} - ${submittedMeta}`
     : submittedMeta;
@@ -123,7 +107,9 @@ export default function ResultsScreen() {
       {isLoading ? (
         <SurfaceCard style={styles.loadingCard} tone="muted">
           <ActivityIndicator color={colors.teal} size="small" />
-          <Text style={styles.loadingText}>Loading result...</Text>
+          <Text style={styles.loadingText}>
+            {examId ? 'Preparing your result...' : 'Loading result...'}
+          </Text>
         </SurfaceCard>
       ) : null}
 
@@ -133,8 +119,12 @@ export default function ResultsScreen() {
             <ActionButton
               compact
               fullWidth={false}
-              label="Back to dashboard"
-              onPress={() => router.replace('/(tabs)')}
+              label={resultData ? 'Retry' : 'Back to dashboard'}
+              onPress={() =>
+                resultData
+                  ? void refreshResult({ force: true })
+                  : router.replace('/(tabs)')
+              }
               tone="danger"
             />
           }
@@ -144,7 +134,7 @@ export default function ResultsScreen() {
         />
       ) : null}
 
-      {!isLoading && !errorMessage && resultData ? (
+      {!isLoading && resultData ? (
         <View style={styles.sectionBlock}>
           <Text style={styles.sectionLabel}>SCORE SUMMARY</Text>
 

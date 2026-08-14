@@ -48,8 +48,10 @@ import {
 import {
   fetchStudentExamSessionData,
   submitStudentExamAnswers,
+  type StudentExamResultData,
   type StudentExamSessionData,
 } from '@/lib/student-exam';
+import { clearScreenCache, setCachedScreenData } from '@/lib/screen-cache';
 
 const EMPTY_QUESTIONS: StudentExamSessionData['questions'] = [];
 const BEEP_SOUND_ASSET = require('../assets/audio/beep.wav');
@@ -815,6 +817,7 @@ export default function ExamSessionScreen() {
   const [proctoringHandleRevision, setProctoringHandleRevision] = useState(0);
 
   const cameraRef = useRef<CameraView | null>(null);
+  const isExamScreenMountedRef = useRef(true);
   const monitorLoopActiveRef = useRef(false);
   const shouldMonitorRef = useRef(false);
   const isRecordingRef = useRef(false);
@@ -827,6 +830,7 @@ export default function ExamSessionScreen() {
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const appExitHandlingRef = useRef(false);
   const proctoringHandleRef = useRef<ProctoringSessionHandle | null>(null);
+  const proctoringFinalizationInProgressRef = useRef(false);
   const heartbeatRefreshBusyRef = useRef(false);
   const lastSuccessfulAnalysisAtRef = useRef<number | null>(null);
   const startupWatchActiveRef = useRef(false);
@@ -867,6 +871,14 @@ export default function ExamSessionScreen() {
     } catch {
       // Best effort: audio cleanup must not interrupt the exam.
     }
+  }, []);
+
+  useEffect(() => {
+    isExamScreenMountedRef.current = true;
+
+    return () => {
+      isExamScreenMountedRef.current = false;
+    };
   }, []);
 
   const stopLiveSuspiciousAlarm = useCallback(() => {
@@ -1361,7 +1373,6 @@ export default function ExamSessionScreen() {
       const hasDelayedDetectorSuspicion =
         latestWindowFlaggedCount > 0 ||
         latestWindowLabel === 'NO_FACE' ||
-        latestWindowLabel === 'CAUTION' ||
         latestWindowLabel === 'SUSPICIOUS';
       setLatestWindowLabel(latestWindowLabel);
       setLatestWindowEventCount(latestWindowFlaggedCount);
@@ -1596,56 +1607,68 @@ export default function ExamSessionScreen() {
 
   const finalizeProctoring = useCallback(
     async (finalStatus: 'submitted' | 'paused' | 'terminated') => {
-      stopAllSuspiciousSounds();
-      shouldMonitorRef.current = false;
-
-      if (isRecordingRef.current) {
-        try {
-          (cameraRef.current as (CameraView & { stopRecording?: () => void }) | null)?.stopRecording?.();
-        } catch {
-          // Ignore stop-recording errors during teardown.
-        }
+      if (proctoringFinalizationInProgressRef.current) {
+        return;
       }
 
-      for (let attempts = 0; attempts < 80; attempts += 1) {
-        if (!monitorLoopActiveRef.current && !isRecordingRef.current) {
-          break;
-        }
-        await sleep(120);
-      }
+      proctoringFinalizationInProgressRef.current = true;
 
-      const handle = proctoringHandleRef.current;
-      if (handle) {
-        try {
-          await endProctoringSession({
-            analysisSessionId: handle.analysisSessionId,
-            finalMetrics: aggregateMetricsRef.current,
-            finalStatus,
-          });
-        } catch {
-          // Keep exam flow resilient; this can be retried by invigilator review if needed.
+      try {
+        stopAllSuspiciousSounds();
+        shouldMonitorRef.current = false;
+
+        if (isRecordingRef.current) {
+          try {
+            (cameraRef.current as (CameraView & { stopRecording?: () => void }) | null)?.stopRecording?.();
+          } catch {
+            // Ignore stop-recording errors during teardown.
+          }
         }
 
-        await deleteDetectorSession(handle.aiSessionId);
-      }
+        for (let attempts = 0; attempts < 80; attempts += 1) {
+          if (!monitorLoopActiveRef.current && !isRecordingRef.current) {
+            break;
+          }
+          await sleep(120);
+        }
 
-      proctoringHandleRef.current = null;
-      heartbeatRefreshBusyRef.current = false;
-      pendingTrailingEvidenceRef.current = [];
-      recentSegmentsRef.current = [];
-      evidenceUploadBlockedRef.current = false;
-      lastSuccessfulAnalysisAtRef.current = null;
-      await clearManagedProctoringClipCache();
+        const handle = proctoringHandleRef.current;
+        if (handle) {
+          try {
+            await endProctoringSession({
+              analysisSessionId: handle.analysisSessionId,
+              finalMetrics: aggregateMetricsRef.current,
+              finalStatus,
+            });
+          } catch {
+            // Keep exam flow resilient; this can be retried by invigilator review if needed.
+          }
 
-      if (finalStatus === 'submitted') {
-        setProctoringStatus('paused');
-        setProctoringMessage('Live analysis submitted with exam.');
-      } else if (finalStatus === 'paused') {
-        setProctoringStatus('paused');
-        setProctoringMessage('Live analysis paused.');
-      } else {
-        setProctoringStatus('error');
-        setProctoringMessage('Live analysis terminated.');
+          await deleteDetectorSession(handle.aiSessionId);
+        }
+
+        proctoringHandleRef.current = null;
+        heartbeatRefreshBusyRef.current = false;
+        pendingTrailingEvidenceRef.current = [];
+        recentSegmentsRef.current = [];
+        evidenceUploadBlockedRef.current = false;
+        lastSuccessfulAnalysisAtRef.current = null;
+        await clearManagedProctoringClipCache();
+
+        if (isExamScreenMountedRef.current) {
+          if (finalStatus === 'submitted') {
+            setProctoringStatus('paused');
+            setProctoringMessage('Live analysis submitted with exam.');
+          } else if (finalStatus === 'paused') {
+            setProctoringStatus('paused');
+            setProctoringMessage('Live analysis paused.');
+          } else {
+            setProctoringStatus('error');
+            setProctoringMessage('Live analysis terminated.');
+          }
+        }
+      } finally {
+        proctoringFinalizationInProgressRef.current = false;
       }
     },
     [stopAllSuspiciousSounds]
@@ -2015,18 +2038,38 @@ export default function ExamSessionScreen() {
       }
 
       try {
-        await submitStudentExamAnswers({
+        const submission = await submitStudentExamAnswers({
           answers: activeSession.questions.map((question) => ({
             questionId: question.id,
             selectedOptionId: selectedOptionsRef.current[question.id] ?? null,
           })),
           examIdInput: activeSession.examId,
         });
+        const submittedResult: StudentExamResultData = {
+          attemptId: submission.attemptId,
+          correctAnswers: submission.correctAnswers,
+          courseCode: activeSession.courseCode,
+          courseTitle: activeSession.courseTitle,
+          examId: submission.examId || activeSession.examId,
+          examTitle: activeSession.examTitle,
+          remark: submission.remark,
+          scorePercent: submission.scorePercent,
+          submittedAt: submission.submittedAt,
+          totalQuestions: submission.totalQuestions,
+        };
+
+        setCachedScreenData(`student.result.${submittedResult.examId}`, submittedResult);
+        setCachedScreenData('student.result.latest', submittedResult);
+        clearScreenCache('student.dashboard');
+        clearScreenCache('student.profile');
+        clearScreenCache('student.session-history');
 
         hasSubmittedRef.current = true;
         void clearStoredAppExitMarker().catch(() => undefined);
-        await finalizeProctoring('submitted');
         setShowConfirm(false);
+        setProctoringStatus('paused');
+        setProctoringMessage('Exam submitted. Preparing your result...');
+        void finalizeProctoring('submitted');
         router.replace({
           pathname: '/(tabs)/results',
           params: { examId: activeSession.examId },
@@ -2314,13 +2357,16 @@ export default function ExamSessionScreen() {
     latestWindowLabel ?? (hasSampledFrames ? aggregateMetrics.finalLabel : null);
   const faceDetected =
     hasSampledFrames && proctoringStatus !== 'error' && effectiveWindowLabel !== 'NO_FACE';
-  const onScreen = hasSampledFrames && faceDetected && effectiveWindowLabel === 'NORMAL';
+  const onScreen =
+    hasSampledFrames &&
+    faceDetected &&
+    (effectiveWindowLabel === 'NORMAL' ||
+      (effectiveWindowLabel === 'CAUTION' && latestWindowEventCount === 0));
   const hasMonitoringAlert =
     proctoringStatus === 'error' ||
     (hasSampledFrames &&
       (latestWindowEventCount > 0 ||
         effectiveWindowLabel === 'NO_FACE' ||
-        effectiveWindowLabel === 'CAUTION' ||
         effectiveWindowLabel === 'SUSPICIOUS'));
   const monitoringAlertMessage =
     proctoringStatus === 'error'
@@ -2331,8 +2377,6 @@ export default function ExamSessionScreen() {
       ? `${latestWindowEventCount} suspicious event(s) detected in the latest window.${latestWindowObservation ? ` Reasons: ${latestWindowObservation}` : ''}`
       : effectiveWindowLabel === 'NO_FACE'
       ? `Face is not visible in the latest 5-second window.${latestWindowObservation ? ` ${latestWindowObservation}` : ''}`
-      : effectiveWindowLabel === 'CAUTION'
-      ? `Monitoring caution in the latest 5-second window.${latestWindowObservation ? ` ${latestWindowObservation}` : ''}`
       : effectiveWindowLabel === 'SUSPICIOUS'
       ? `Suspicious activity detected in the latest 5-second window.${latestWindowObservation ? ` ${latestWindowObservation}` : ''}`
       : 'No suspicious activity in the latest 5-second window.';

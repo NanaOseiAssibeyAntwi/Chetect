@@ -117,6 +117,16 @@ export type StudentExamResultData = {
   totalQuestions: number;
 };
 
+export type StudentExamSubmissionData = {
+  attemptId: string;
+  correctAnswers: number;
+  examId: string;
+  remark: string;
+  scorePercent: number;
+  submittedAt: string;
+  totalQuestions: number;
+};
+
 function toNumber(value: number | string | null | undefined) {
   const numeric = Number(value ?? 0);
   return Number.isFinite(numeric) ? numeric : 0;
@@ -338,7 +348,7 @@ export async function submitStudentExamAnswers({
 }: {
   answers: SubmitStudentExamAnswerInput[];
   examIdInput: string;
-}): Promise<StudentExamResultData> {
+}): Promise<StudentExamSubmissionData> {
   const examId = examIdInput.trim();
 
   if (!examId) {
@@ -370,16 +380,13 @@ export async function submitStudentExamAnswers({
     throw new Error('Exam submission failed. Please try again.');
   }
 
-  const result = await fetchStudentExamResult(examId);
-
-  // Return server-graded values with latest exam/course metadata.
   return {
-    ...result,
     attemptId: submission.attempt_id,
     correctAnswers: toNumber(submission.correct_answers),
-    remark: submission.remark || result.remark,
+    examId: submission.exam_id || examId,
+    remark: submission.remark || 'Submitted.',
     scorePercent: toNumber(submission.score_percent),
-    submittedAt: submission.submitted_at || result.submittedAt,
+    submittedAt: submission.submitted_at,
     totalQuestions: toNumber(submission.total_questions),
   };
 }

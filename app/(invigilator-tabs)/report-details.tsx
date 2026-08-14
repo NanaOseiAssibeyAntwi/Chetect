@@ -2,12 +2,13 @@ import { Feather } from '@expo/vector-icons';
 import { ResizeMode, Video } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AppScreen } from '@/components/app-screen';
 import { ActionButton, AccentBadge, InlineMessage, MetricTile, SurfaceCard } from '@/components/product-ui';
 import { layout, radius, shadow, type } from '@/constants/design';
+import { useCachedResource } from '@/hooks/use-cached-resource';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import {
   fetchInvigilatorReportDetails,
@@ -158,9 +159,18 @@ export default function InvigilatorReportDetailsScreen() {
     [params.examId]
   );
 
-  const [reportDetails, setReportDetails] = useState<InvigilatorReportDetailsData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState('');
+  const loadReportDetails = useCallback(() => fetchInvigilatorReportDetails(examId), [examId]);
+  const {
+    data: reportDetails,
+    errorMessage,
+    isLoading,
+    refresh: refreshReportDetails,
+  } = useCachedResource<InvigilatorReportDetailsData | null>({
+    initialData: null,
+    key: `invigilator.report-details.${examId || 'missing'}`,
+    loader: loadReportDetails,
+    maxAgeMs: 60_000,
+  });
   const [openEventId, setOpenEventId] = useState('');
   const [clipPlaybackErrors, setClipPlaybackErrors] = useState<Record<string, string>>({});
   const [clipLocalUris, setClipLocalUris] = useState<Record<string, string>>({});
@@ -177,41 +187,29 @@ export default function InvigilatorReportDetailsScreen() {
   }, [clipDownloadsInProgress]);
 
   useEffect(() => {
-    let isMounted = true;
-
-    const loadReportDetails = async () => {
-      setIsLoading(true);
-      setErrorMessage('');
-      setClipPlaybackErrors({});
-      setClipLocalUris({});
-      setClipDownloadsInProgress({});
-
-      try {
-        const result = await fetchInvigilatorReportDetails(examId);
-
-        if (isMounted) {
-          setReportDetails(result);
-          setOpenEventId(result.suspiciousEvents[0]?.id ?? '');
-        }
-      } catch (error) {
-        if (isMounted) {
-          setReportDetails(null);
-          setOpenEventId('');
-          setErrorMessage(error instanceof Error ? error.message : 'Unable to load report details.');
-        }
-      } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    void loadReportDetails();
-
-    return () => {
-      isMounted = false;
-    };
+    setClipPlaybackErrors({});
+    setClipLocalUris({});
+    setClipDownloadsInProgress({});
   }, [examId]);
+
+  useEffect(() => {
+    void refreshReportDetails({ showLoader: reportDetails === null });
+  }, [refreshReportDetails, reportDetails]);
+
+  useEffect(() => {
+    if (!reportDetails) {
+      setOpenEventId('');
+      return;
+    }
+
+    setOpenEventId((current) => {
+      if (current && reportDetails.suspiciousEvents.some((eventRow) => eventRow.id === current)) {
+        return current;
+      }
+
+      return reportDetails.suspiciousEvents[0]?.id ?? '';
+    });
+  }, [reportDetails]);
 
   useEffect(() => {
     if (!openEventId) {
@@ -349,8 +347,12 @@ export default function InvigilatorReportDetailsScreen() {
             <ActionButton
               compact
               fullWidth={false}
-              label="Back to reports"
-              onPress={() => router.navigate('/(invigilator-tabs)/reports')}
+              label={reportDetails ? 'Retry' : 'Back to reports'}
+              onPress={() =>
+                reportDetails
+                  ? void refreshReportDetails({ force: true })
+                  : router.navigate('/(invigilator-tabs)/reports')
+              }
               tone="danger"
             />
           }
@@ -360,7 +362,7 @@ export default function InvigilatorReportDetailsScreen() {
         />
       ) : null}
 
-      {!isLoading && !errorMessage && reportDetails ? (
+      {!isLoading && reportDetails ? (
         <>
           <View style={styles.metricRow}>
             {metrics.map((metric) => (

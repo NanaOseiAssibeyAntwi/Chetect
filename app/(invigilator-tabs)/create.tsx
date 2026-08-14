@@ -20,6 +20,7 @@ import {
   type CreateExamQuestionInput,
   type CreateExamSessionInput,
 } from '@/lib/invigilator-sessions';
+import { clearScreenCache, clearScreenCacheByPrefix } from '@/lib/screen-cache';
 
 type MonitoringMode = CreateExamSessionInput['monitoringMode'];
 
@@ -164,6 +165,12 @@ export default function InvigilatorCreateScreen() {
         startTime,
         studentInstitutionalIds: requestedStudentIds,
       });
+
+      clearScreenCache('invigilator.dashboard');
+      clearScreenCache('invigilator.audit-history');
+      clearScreenCache('invigilator.profile');
+      clearScreenCache('invigilator.reports');
+      clearScreenCacheByPrefix('invigilator.monitor');
 
       router.replace({
         pathname: '/(invigilator-tabs)/session-details',

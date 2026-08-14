@@ -1,7 +1,7 @@
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { layout, radius, shadow, type } from '@/constants/design';
+import { useCachedResource } from '@/hooks/use-cached-resource';
 import { AccentBadge, ActionButton, InlineMessage, MetricTile, SurfaceCard } from '@/components/product-ui';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import {
@@ -37,45 +38,28 @@ export default function DashboardScreen() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
-  const [dashboardData, setDashboardData] = useState<StudentDashboardData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-
-  const loadDashboard = useCallback(async (options: { showLoader?: boolean } = {}) => {
-    const shouldShowLoader = options.showLoader ?? true;
-    if (shouldShowLoader) {
-      setIsLoading(true);
-    }
-    setErrorMessage('');
-
-    try {
-      const result = await fetchStudentDashboardData();
-      setDashboardData(result);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Unable to load dashboard.');
-    } finally {
-      if (shouldShowLoader) {
-        setIsLoading(false);
-      }
-    }
-  }, []);
+  const {
+    data: dashboardData,
+    errorMessage,
+    isLoading,
+    isRefreshing,
+    refresh: refreshDashboard,
+  } = useCachedResource<StudentDashboardData | null>({
+    initialData: null,
+    key: 'student.dashboard',
+    loader: fetchStudentDashboardData,
+    maxAgeMs: 30_000,
+  });
 
   const handleRefresh = useCallback(async () => {
-    setIsRefreshing(true);
-
-    try {
-      await loadDashboard({ showLoader: false });
-    } finally {
-      setIsRefreshing(false);
-    }
-  }, [loadDashboard]);
+    await refreshDashboard({ force: true, showLoader: false });
+  }, [refreshDashboard]);
 
   useFocusEffect(
     useCallback(() => {
-      void loadDashboard();
+      void refreshDashboard({ showLoader: dashboardData === null });
       return undefined;
-    }, [loadDashboard])
+    }, [dashboardData, refreshDashboard])
   );
 
   const metrics = useMemo(
@@ -152,7 +136,7 @@ export default function DashboardScreen() {
                 compact
                 fullWidth={false}
                 label="Retry"
-                onPress={() => void loadDashboard()}
+                onPress={() => void refreshDashboard({ force: true })}
                 tone="danger"
               />
             }

@@ -1,17 +1,20 @@
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AppScreen } from '@/components/app-screen';
 import { ActionButton, AccentBadge, InlineMessage, SurfaceCard } from '@/components/product-ui';
 import { layout, radius, type } from '@/constants/design';
+import { useCachedResource } from '@/hooks/use-cached-resource';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import {
   fetchStudentNotifications,
   type StudentNotificationItem,
 } from '@/lib/student-profile';
+
+const EMPTY_NOTIFICATIONS: StudentNotificationItem[] = [];
 
 function formatNotificationTime(isoDate: string) {
   const date = new Date(isoDate);
@@ -31,29 +34,23 @@ export default function NotificationsScreen() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
-  const [notifications, setNotifications] = useState<StudentNotificationItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState('');
-
-  const loadNotifications = useCallback(async () => {
-    setIsLoading(true);
-    setErrorMessage('');
-
-    try {
-      const result = await fetchStudentNotifications();
-      setNotifications(result);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Unable to load notifications.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  const {
+    data: notifications,
+    errorMessage,
+    isLoading,
+    refresh: refreshNotifications,
+  } = useCachedResource<StudentNotificationItem[]>({
+    initialData: EMPTY_NOTIFICATIONS,
+    key: 'student.notifications',
+    loader: fetchStudentNotifications,
+    maxAgeMs: 30_000,
+  });
 
   useFocusEffect(
     useCallback(() => {
-      void loadNotifications();
+      void refreshNotifications();
       return undefined;
-    }, [loadNotifications])
+    }, [refreshNotifications])
   );
 
   const unreadCount = notifications.filter((notification) => !notification.isRead).length;
@@ -93,7 +90,7 @@ export default function NotificationsScreen() {
               compact
               fullWidth={false}
               label="Retry"
-              onPress={() => void loadNotifications()}
+              onPress={() => void refreshNotifications({ force: true })}
               tone="danger"
             />
           }
