@@ -56,14 +56,14 @@ const EMPTY_QUESTIONS: StudentExamSessionData['questions'] = [];
 const BEEP_SOUND_ASSET = require('../assets/audio/beep.wav');
 const CLIP_SECONDS = 1;
 const CLIP_READY_MIN_BYTES = 2048;
-const DELAYED_DETECTOR_ALERT_COOLDOWN_MS = 4_000;
-const DELAYED_DETECTOR_ALERT_SOUND_MS = 1_800;
+const DELAYED_DETECTOR_ALERT_COOLDOWN_MS = 850;
+const DELAYED_DETECTOR_ALERT_SOUND_MS = 900;
 const MAX_PENDING_ANALYSIS_RESULTS = 12;
 const MAX_TRACKED_ANALYSIS_SEGMENTS = 12;
 const ANALYSIS_SEGMENT_RETENTION_MS = 90_000;
 const CLIP_CLEANUP_INTERVAL_MS = 5_000;
 const TRAILING_EVIDENCE_RESOLVE_DELAY_MS = 900;
-const LIVE_VIDEO_BITRATE = 600_000;
+const LIVE_VIDEO_BITRATE = 400_000;
 const EVIDENCE_LEAD_SECONDS = 2;
 const EVIDENCE_TRAIL_SECONDS = 2;
 const SEGMENT_PRUNE_WINDOW_SECONDS = 32;
@@ -727,7 +727,7 @@ function appendEvidenceSegmentIfMissing(
 function deriveDetectorSampling(monitoringMode: StudentExamSessionData['monitoringMode']) {
   void monitoringMode;
   return {
-    maxFrames: 10,
+    maxFrames: 6,
     sampleEveryNFrames: 5,
   };
 }
@@ -815,6 +815,8 @@ export default function ExamSessionScreen() {
   const liveSuspiciousAlarmRef = useRef<Audio.Sound | null>(null);
   const liveSuspiciousAlarmLoadingRef = useRef(false);
   const liveSuspiciousAlarmWantedRef = useRef(false);
+  const detectorAlertSoundRef = useRef<Audio.Sound | null>(null);
+  const detectorAlertSoundLoadingRef = useRef(false);
   const delayedAlertSoundsRef = useRef<Set<Audio.Sound>>(new Set());
   const delayedAlertTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
   const lastDelayedAlertSoundAtRef = useRef(0);
@@ -918,6 +920,42 @@ export default function ExamSessionScreen() {
     })();
   }, [configureExamAudio]);
 
+  const prepareDetectorAlertSound = useCallback(() => {
+    if (detectorAlertSoundRef.current || detectorAlertSoundLoadingRef.current) {
+      return;
+    }
+
+    detectorAlertSoundLoadingRef.current = true;
+
+    void (async () => {
+      const sound = new Audio.Sound();
+
+      try {
+        await configureExamAudio();
+        await sound.loadAsync(BEEP_SOUND_ASSET, {
+          isLooping: false,
+          shouldPlay: false,
+          volume: 0.95,
+        });
+
+        if (!isExamScreenMountedRef.current) {
+          await sound.unloadAsync();
+          return;
+        }
+
+        detectorAlertSoundRef.current = sound;
+      } catch {
+        try {
+          await sound.unloadAsync();
+        } catch {
+          // Best effort: failed alert preload should never block monitoring.
+        }
+      } finally {
+        detectorAlertSoundLoadingRef.current = false;
+      }
+    })();
+  }, [configureExamAudio]);
+
   const playDelayedSuspiciousAlertSound = useCallback(() => {
     const now = Date.now();
     if (now - lastDelayedAlertSoundAtRef.current < DELAYED_DETECTOR_ALERT_COOLDOWN_MS) {
@@ -925,6 +963,16 @@ export default function ExamSessionScreen() {
     }
 
     lastDelayedAlertSoundAtRef.current = now;
+    const preloadedSound = detectorAlertSoundRef.current;
+    if (preloadedSound) {
+      void preloadedSound.replayAsync().catch(() => {
+        detectorAlertSoundRef.current = null;
+        prepareDetectorAlertSound();
+      });
+      return;
+    }
+
+    prepareDetectorAlertSound();
 
     void (async () => {
       try {
@@ -951,10 +999,29 @@ export default function ExamSessionScreen() {
         // Best effort: failed alert audio should never block monitoring.
       }
     })();
-  }, [cleanupDelayedAlertSound, configureExamAudio]);
+  }, [cleanupDelayedAlertSound, configureExamAudio, prepareDetectorAlertSound]);
 
   const stopAllSuspiciousSounds = useCallback(() => {
     stopLiveSuspiciousAlarm();
+
+    const detectorAlertSound = detectorAlertSoundRef.current;
+    detectorAlertSoundRef.current = null;
+    detectorAlertSoundLoadingRef.current = false;
+    if (detectorAlertSound) {
+      void (async () => {
+        try {
+          await detectorAlertSound.stopAsync();
+        } catch {
+          // Best effort: audio cleanup must not interrupt the exam.
+        }
+
+        try {
+          await detectorAlertSound.unloadAsync();
+        } catch {
+          // Best effort: audio cleanup must not interrupt the exam.
+        }
+      })();
+    }
 
     for (const timer of delayedAlertTimersRef.current) {
       clearTimeout(timer);
@@ -988,6 +1055,14 @@ export default function ExamSessionScreen() {
   useEffect(() => {
     sessionDataRef.current = sessionData;
   }, [sessionData]);
+
+  useEffect(() => {
+    if (!sessionData || isLoading || errorMessage) {
+      return;
+    }
+
+    prepareDetectorAlertSound();
+  }, [errorMessage, isLoading, prepareDetectorAlertSound, sessionData]);
 
   const uploadSegmentIfNeeded = useCallback(async (segment: LocalClipSegment) => {
     if (segment.path) {
@@ -1322,6 +1397,116 @@ export default function ExamSessionScreen() {
     [uploadSegmentIfNeeded]
   );
 
+  const persistConfirmedAnalysisResult = useCallback(
+    ({
+      analysisSessionId,
+      detectorSessionId,
+      mergedMetrics,
+      segment,
+      summary,
+    }: {
+      analysisSessionId: string;
+      detectorSessionId: string | null;
+      mergedMetrics: ReturnType<typeof createEmptyAggregateMetrics>;
+      segment: LocalClipSegment;
+      summary: LiveDetectorSummary;
+    }) => {
+      void (async () => {
+        if (proctoringHandleRef.current?.analysisSessionId !== analysisSessionId) {
+          return;
+        }
+
+        let syncWarning = false;
+        let evidenceUploadWarning = false;
+
+        try {
+          await syncAnalysisSessionMetrics({
+            analysisSessionId,
+            backendSessionId: detectorSessionId,
+            metrics: mergedMetrics,
+            status: 'active',
+          });
+        } catch (syncError) {
+          const syncMessage = toErrorMessage(syncError, 'Unable to sync live analysis metrics.');
+          if (!isLikelyTransientNetworkFailure(syncMessage)) {
+            throw syncError;
+          }
+          syncWarning = true;
+        }
+
+        try {
+          evidenceUploadWarning = await resolvePendingTrailingEvidence(segment);
+          const suspiciousEventUploadWarning = await persistSuspiciousEvents({
+            clip: segment,
+            detectorSessionId,
+            events: summary.events ?? [],
+          });
+          evidenceUploadWarning = evidenceUploadWarning || suspiciousEventUploadWarning;
+
+          if ((summary.events ?? []).length > 0 || pendingTrailingEvidenceRef.current.length > 0) {
+            for (const candidateSegment of [...recentSegmentsRef.current]) {
+              const trailingEvidenceWarning = await resolvePendingTrailingEvidence(candidateSegment);
+              evidenceUploadWarning = evidenceUploadWarning || trailingEvidenceWarning;
+            }
+          }
+        } catch (eventSyncError) {
+          const eventSyncMessage = toErrorMessage(
+            eventSyncError,
+            'Unable to sync suspicious event evidence.'
+          );
+          if (!isLikelyTransientNetworkFailure(eventSyncMessage)) {
+            throw eventSyncError;
+          }
+          syncWarning = true;
+        }
+
+        if (
+          !isExamScreenMountedRef.current ||
+          proctoringHandleRef.current?.analysisSessionId !== analysisSessionId
+        ) {
+          return;
+        }
+
+        if (syncWarning) {
+          setProctoringStatus('active');
+          setProctoringMessage(
+            'Live analysis is running, but sync to the server is delayed. Retrying automatically...'
+          );
+          return;
+        }
+
+        if (evidenceUploadWarning) {
+          setProctoringStatus('active');
+          setProctoringMessage(EVIDENCE_UPLOAD_WARNING_MESSAGE);
+        }
+      })().catch((error) => {
+        const message = toErrorMessage(error, 'Unable to sync live detector result.');
+        if (!isExamScreenMountedRef.current) {
+          return;
+        }
+
+        if (isLikelyEvidenceUploadFailure(message)) {
+          evidenceUploadBlockedRef.current = true;
+          setProctoringStatus('active');
+          setProctoringMessage(EVIDENCE_UPLOAD_WARNING_MESSAGE);
+          return;
+        }
+
+        if (isLikelyTransientNetworkFailure(message)) {
+          setProctoringStatus('active');
+          setProctoringMessage(
+            'Live analysis is running, but sync to the server is delayed. Retrying automatically...'
+          );
+          return;
+        }
+
+        setProctoringStatus('error');
+        setProctoringMessage(message);
+      });
+    },
+    [persistSuspiciousEvents, resolvePendingTrailingEvidence]
+  );
+
   const processAnalysisResult = useCallback(
     async ({ processingMs, receivedAtMs, sequence, summary: rawSummary }: PendingAnalysisResult) => {
       const trackedChunk = analysisSegmentsRef.current.get(sequence);
@@ -1368,63 +1553,15 @@ export default function ExamSessionScreen() {
         playDelayedSuspiciousAlertSound();
       }
 
-      let syncWarning = false;
-      let evidenceUploadWarning = false;
-
-      try {
-        await syncAnalysisSessionMetrics({
-          analysisSessionId: handle.analysisSessionId,
-          backendSessionId: detectorSessionId,
-          metrics: mergedMetrics,
-          status: 'active',
-        });
-      } catch (syncError) {
-        const syncMessage = toErrorMessage(syncError, 'Unable to sync live analysis metrics.');
-        if (!isLikelyTransientNetworkFailure(syncMessage)) {
-          throw syncError;
-        }
-        syncWarning = true;
-      }
-
-      try {
-        evidenceUploadWarning = await resolvePendingTrailingEvidence(segment);
-        const suspiciousEventUploadWarning = await persistSuspiciousEvents({
-          clip: segment,
-          detectorSessionId,
-          events: summary.events ?? [],
-        });
-        evidenceUploadWarning = evidenceUploadWarning || suspiciousEventUploadWarning;
-
-        if ((summary.events ?? []).length > 0 || pendingTrailingEvidenceRef.current.length > 0) {
-          for (const candidateSegment of [...recentSegmentsRef.current]) {
-            const trailingEvidenceWarning = await resolvePendingTrailingEvidence(candidateSegment);
-            evidenceUploadWarning = evidenceUploadWarning || trailingEvidenceWarning;
-          }
-        }
-      } catch (eventSyncError) {
-        const eventSyncMessage = toErrorMessage(
-          eventSyncError,
-          'Unable to sync suspicious event evidence.'
-        );
-        if (!isLikelyTransientNetworkFailure(eventSyncMessage)) {
-          throw eventSyncError;
-        }
-        syncWarning = true;
-      }
+      persistConfirmedAnalysisResult({
+        analysisSessionId: handle.analysisSessionId,
+        detectorSessionId,
+        mergedMetrics,
+        segment,
+        summary,
+      });
 
       setProctoringStatus('active');
-
-      if (syncWarning) {
-        setProctoringMessage(
-          'Live analysis is running, but sync to the server is delayed. Retrying automatically...'
-        );
-        return;
-      }
-
-      if (evidenceUploadWarning) {
-        setProctoringMessage(EVIDENCE_UPLOAD_WARNING_MESSAGE);
-        return;
-      }
 
       const segmentEndedAtMs = toTimestampMs(segment.endedAtIso) ?? Date.now();
       const confirmedLatencyMs = Math.max(0, receivedAtMs - segmentEndedAtMs);
@@ -1438,7 +1575,7 @@ export default function ExamSessionScreen() {
           : `Live analysis running. Last confirmed chunk #${sequence}.${processingSuffix}`
       );
     },
-    [persistSuspiciousEvents, playDelayedSuspiciousAlertSound, resolvePendingTrailingEvidence]
+    [persistConfirmedAnalysisResult, playDelayedSuspiciousAlertSound]
   );
 
   const drainAnalysisResults = useCallback(async () => {
@@ -1906,7 +2043,7 @@ export default function ExamSessionScreen() {
         }
 
         const analysisSocket = createProctoringAnalysisSocket({
-          maxInFlightChunks: 2,
+          maxInFlightChunks: 1,
           maxQueuedChunks: 1,
           onAnalysis: ({ processingMs, sequence, summary }) => {
             if (isCancelled || !isExamScreenMountedRef.current) {
