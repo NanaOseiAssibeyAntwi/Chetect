@@ -2,11 +2,11 @@ import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
 import { ComponentProps, useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AppScreen } from '@/components/app-screen';
-import { ActionButton, InlineMessage, MetricTile, SurfaceCard } from '@/components/product-ui';
-import { layout, radius, type } from '@/constants/design';
+import { ActionButton, InlineMessage, SurfaceCard } from '@/components/product-ui';
+import { layout, radius, shadow, type } from '@/constants/design';
 import { useCachedResource } from '@/hooks/use-cached-resource';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { fetchStudentProfileData, type StudentProfileData } from '@/lib/student-profile';
@@ -38,6 +38,18 @@ function toInitials(name: string) {
   return initials || 'ST';
 }
 
+function getIntegrityTone(score: number, colors: ReturnType<typeof useAppTheme>['colors']) {
+  if (score >= 80) {
+    return colors.success;
+  }
+
+  if (score >= 60) {
+    return colors.warning;
+  }
+
+  return colors.danger;
+}
+
 export default function ProfileScreen() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -63,13 +75,30 @@ export default function ProfileScreen() {
     }, [profileData, refreshProfile])
   );
 
+  const integrityScore = profileData?.stats.integrity ?? 100;
+  const integrityColor = getIntegrityTone(integrityScore, colors);
   const stats = useMemo(
     () => [
-      { label: 'EXAMS', value: String(profileData?.stats.examsTaken ?? 0) },
-      { label: 'AVG SCORE', value: `${profileData?.stats.averageScore ?? 0}%` },
-      { label: 'INTEGRITY', value: String(profileData?.stats.integrity ?? 100) },
+      {
+        color: colors.teal,
+        icon: 'clipboard-check-outline' as ProfileIconName,
+        label: 'Exams',
+        value: String(profileData?.stats.examsTaken ?? 0),
+      },
+      {
+        color: colors.sky,
+        icon: 'chart-line' as ProfileIconName,
+        label: 'Avg score',
+        value: `${profileData?.stats.averageScore ?? 0}%`,
+      },
+      {
+        color: integrityColor,
+        icon: 'shield-check-outline' as ProfileIconName,
+        label: 'Integrity',
+        value: String(integrityScore),
+      },
     ],
-    [profileData]
+    [colors.sky, colors.teal, integrityColor, integrityScore, profileData]
   );
 
   const accountItems = useMemo(
@@ -97,7 +126,7 @@ export default function ProfileScreen() {
     [profileData]
   );
 
-  const privacyItems = useMemo(
+  const recordsItems = useMemo(
     () =>
       [
         {
@@ -116,7 +145,7 @@ export default function ProfileScreen() {
     [profileData]
   );
 
-  const handleSignOut = async () => {
+  const performSignOut = async () => {
     setIsSigningOut(true);
 
     try {
@@ -127,13 +156,41 @@ export default function ProfileScreen() {
     }
   };
 
+  const handleSignOut = () => {
+    if (isSigningOut) {
+      return;
+    }
+
+    Alert.alert(
+      'Sign out?',
+      'Are you sure you want to sign out of this student account?',
+      [
+        {
+          style: 'cancel',
+          text: 'Cancel',
+        },
+        {
+          onPress: () => {
+            void performSignOut();
+          },
+          style: 'destructive',
+          text: 'Sign out',
+        },
+      ],
+      { cancelable: true }
+    );
+  };
+
   return (
     <AppScreen accent="teal" contentContainerStyle={styles.content} edges={['top']}>
       <View style={styles.headerRow}>
         <Pressable onPress={() => router.navigate('/(tabs)')} style={styles.backButton}>
           <Feather color={colors.mutedStrong} name="chevron-left" size={18} />
         </Pressable>
-        <Text style={styles.eyebrow}>PROFILE</Text>
+        <View style={styles.headerText}>
+          <Text style={styles.eyebrow}>PROFILE</Text>
+          <Text style={styles.headerTitle}>Student account</Text>
+        </View>
       </View>
 
       {isLoading ? (
@@ -147,12 +204,12 @@ export default function ProfileScreen() {
         <InlineMessage
           action={
             <ActionButton
-                compact
-                fullWidth={false}
-                label="Retry"
-                onPress={() => void refreshProfile({ force: true })}
-                tone="danger"
-              />
+              compact
+              fullWidth={false}
+              label="Retry"
+              onPress={() => void refreshProfile({ force: true })}
+              tone="danger"
+            />
           }
           description={errorMessage}
           style={styles.errorMessage}
@@ -160,131 +217,143 @@ export default function ProfileScreen() {
         />
       ) : null}
 
-      <SurfaceCard style={styles.heroGradient}>
-        <View style={styles.avatarRing}>
-          <View style={styles.avatarBox}>
-            <Text style={styles.avatarText}>{toInitials(profileData?.studentName ?? 'Student')}</Text>
+      <View style={styles.identityCard}>
+        <View style={styles.avatarBox}>
+          <Text style={styles.avatarText}>{toInitials(profileData?.studentName ?? 'Student')}</Text>
+        </View>
+        <View style={styles.identityText}>
+          <Text numberOfLines={1} style={styles.name}>{profileData?.studentName ?? 'Student'}</Text>
+          <Text numberOfLines={1} style={styles.meta}>
+            {profileData?.studentId ? profileData.studentId.toUpperCase() : 'STUDENT ID NOT SET'}
+          </Text>
+          <View style={styles.deptPill}>
+            <Text numberOfLines={1} style={styles.deptPillText}>
+              {profileData?.departmentName ?? 'Department not set'}
+            </Text>
           </View>
         </View>
-        <Text style={styles.name}>{profileData?.studentName ?? 'Student'}</Text>
-        <Text style={styles.meta}>
-          {profileData?.studentId ? profileData.studentId.toUpperCase() : 'STUDENT ID NOT SET'}
-        </Text>
-        <View style={styles.deptPill}>
-          <Text style={styles.deptPillText}>{profileData?.departmentName ?? 'Department not set'}</Text>
+      </View>
+
+      <View style={styles.statsRow}>
+        {stats.map((item) => (
+          <View key={item.label} style={styles.statCard}>
+            <MaterialCommunityIcons color={item.color} name={item.icon} size={17} />
+            <Text numberOfLines={1} style={[styles.statValue, { color: item.color }]}>{item.value}</Text>
+            <Text numberOfLines={1} style={styles.statLabel}>{item.label}</Text>
+          </View>
+        ))}
+      </View>
+
+      <ProfileGroup colors={colors} items={accountItems} title="Account" />
+      <ProfileGroup colors={colors} items={recordsItems} title="Records & Support" />
+
+      <SurfaceCard style={styles.signOutCard} tone="muted">
+        <View style={styles.signOutText}>
+          <Text style={styles.signOutTitle}>Signed in on this device</Text>
+          <Text style={styles.signOutCopy}>Sign out when you are done using a shared phone.</Text>
         </View>
+        <ActionButton
+          compact
+          disabled={isSigningOut}
+          fullWidth={false}
+          icon={
+            isSigningOut ? (
+              <ActivityIndicator color={colors.danger} size="small" />
+            ) : (
+              <Feather color={colors.danger} name="log-out" size={15} />
+            )
+          }
+          label={isSigningOut ? '' : 'Sign out'}
+          onPress={handleSignOut}
+          tone="danger"
+        />
       </SurfaceCard>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionLabel}>INTEGRITY RECORD</Text>
-        <View style={styles.statsRow}>
-          {stats.map((item) => (
-            <MetricTile
-              accentColor={colors.teal}
-              key={item.label}
-              label={item.label}
-              style={styles.statCard}
-              value={item.value}
-            />
-          ))}
-        </View>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionLabel}>ACCOUNT</Text>
-        <SurfaceCard style={styles.group} tone="muted">
-          {accountItems.map((item, index) => (
-            <Pressable
-              key={item.label}
-              onPress={() => router.push(item.href)}
-              style={({ pressed }) => [
-                styles.infoCard,
-                index === accountItems.length - 1 ? styles.infoCardLast : null,
-                pressed ? styles.infoCardPressed : null,
-              ]}>
-              <View style={styles.itemRow}>
-                <MaterialCommunityIcons color={colors.mutedStrong} name={item.icon} size={20} />
-                <View style={styles.itemText}>
-                  <Text style={styles.itemLabel}>{item.label}</Text>
-                  <Text style={styles.itemValue}>{item.value}</Text>
-                </View>
-                <Feather color={colors.mutedStrong} name="chevron-right" size={16} />
-              </View>
-            </Pressable>
-          ))}
-        </SurfaceCard>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionLabel}>DATA & PRIVACY</Text>
-        <SurfaceCard style={styles.group} tone="muted">
-          {privacyItems.map((item, index) => (
-            <Pressable
-              key={item.label}
-              onPress={() => router.push(item.href)}
-              style={({ pressed }) => [
-                styles.infoCard,
-                index === privacyItems.length - 1 ? styles.infoCardLast : null,
-                pressed ? styles.infoCardPressed : null,
-              ]}>
-              <View style={styles.itemRow}>
-                <MaterialCommunityIcons color={colors.mutedStrong} name={item.icon} size={20} />
-                <View style={styles.itemText}>
-                  <Text style={styles.itemLabel}>{item.label}</Text>
-                  <Text style={styles.itemValue}>{item.value}</Text>
-                </View>
-                <Feather color={colors.mutedStrong} name="chevron-right" size={16} />
-              </View>
-            </Pressable>
-          ))}
-        </SurfaceCard>
-      </View>
-
-      <View style={styles.footerSpacer} />
-
-      <ActionButton
-        disabled={isSigningOut}
-        icon={
-          isSigningOut ? (
-            <ActivityIndicator color={colors.danger} size="small" />
-          ) : (
-            <Feather color={colors.danger} name="log-out" size={15} />
-          )
-        }
-        label="Sign Out"
-        onPress={handleSignOut}
-        tone="danger"
-      />
     </AppScreen>
+  );
+}
+
+function ProfileGroup({
+  colors,
+  items,
+  title,
+}: {
+  colors: ReturnType<typeof useAppTheme>['colors'];
+  items: ProfileActionItem[];
+  title: string;
+}) {
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionLabel}>{title}</Text>
+      <View style={styles.actionList}>
+        {items.map((item) => (
+          <Pressable
+            key={item.label}
+            onPress={() => router.push(item.href)}
+            style={({ pressed }) => [styles.actionRow, pressed ? styles.actionRowPressed : null]}>
+            <View style={styles.actionIcon}>
+              <MaterialCommunityIcons color={colors.teal} name={item.icon} size={20} />
+            </View>
+            <View style={styles.itemText}>
+              <Text style={styles.itemLabel}>{item.label}</Text>
+              <Text numberOfLines={1} style={styles.itemValue}>{item.value}</Text>
+            </View>
+            <Feather color={colors.mutedStrong} name="chevron-right" size={17} />
+          </Pressable>
+        ))}
+      </View>
+    </View>
   );
 }
 
 function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   return StyleSheet.create({
-    avatarBox: {
+    actionIcon: {
+      alignItems: 'center',
+      backgroundColor: colors.tealSoft,
+      borderColor: colors.tealGlow,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      height: 40,
+      justifyContent: 'center',
+      width: 40,
+    },
+    actionList: {
+      gap: 10,
+      marginTop: 10,
+    },
+    actionRow: {
       alignItems: 'center',
       backgroundColor: colors.panel,
       borderColor: colors.border,
+      borderRadius: radius.md,
       borderWidth: 1,
-      borderRadius: radius.pill,
-      height: 64,
-      justifyContent: 'center',
-      width: 64,
+      flexDirection: 'row',
+      gap: 12,
+      minHeight: 70,
+      paddingHorizontal: 13,
+      paddingVertical: 13,
+      ...shadow.card,
     },
-    avatarRing: {
+    actionRowPressed: {
+      opacity: 0.88,
+      transform: [{ scale: 0.99 }],
+    },
+    avatarBox: {
       alignItems: 'center',
-      backgroundColor: colors.panelSoft,
-      borderColor: colors.border,
+      backgroundColor: colors.tealSoft,
+      borderColor: colors.tealGlow,
       borderRadius: radius.pill,
       borderWidth: 1,
-      height: 78,
+      height: 58,
       justifyContent: 'center',
-      width: 78,
+      width: 58,
     },
     avatarText: {
       color: colors.teal,
-      fontSize: 22,
-      fontWeight: '800',
+      fontSize: 20,
+      fontWeight: '900',
     },
     backButton: {
       alignItems: 'center',
@@ -292,58 +361,85 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       borderColor: colors.border,
       borderRadius: radius.md,
       borderWidth: 1,
-      height: 28,
+      height: 34,
       justifyContent: 'center',
-      width: 28,
+      width: 34,
     },
     content: {
-      paddingBottom: 16,
+      paddingBottom: layout.bottomPadding,
     },
     deptPill: {
+      alignSelf: 'flex-start',
       backgroundColor: colors.panelSoft,
       borderColor: colors.border,
       borderRadius: radius.pill,
       borderWidth: 1,
-      marginTop: 10,
-      paddingHorizontal: 12,
+      marginTop: 8,
+      maxWidth: '100%',
+      paddingHorizontal: 10,
       paddingVertical: 5,
     },
     deptPillText: {
       color: colors.mutedStrong,
       fontSize: type.tiny,
-      fontWeight: '700',
-      letterSpacing: 0.4,
+      fontWeight: '900',
+      letterSpacing: 0.5,
       textTransform: 'uppercase',
     },
     errorMessage: {
       marginTop: 14,
     },
     eyebrow: {
-      color: colors.mutedStrong,
-      fontSize: type.label,
-      fontWeight: '700',
-      letterSpacing: 0.5,
+      color: colors.teal,
+      fontSize: type.tiny,
+      fontWeight: '900',
+      letterSpacing: 1,
       textTransform: 'uppercase',
-    },
-    footerSpacer: {
-      flex: 1,
-      minHeight: layout.footerSpacer,
-    },
-    group: {
-      marginTop: 12,
-      paddingHorizontal: 0,
-      paddingVertical: 0,
     },
     headerRow: {
       alignItems: 'center',
       flexDirection: 'row',
       gap: 10,
     },
-    heroGradient: {
+    headerText: {
+      flex: 1,
+      gap: 3,
+    },
+    headerTitle: {
+      color: colors.text,
+      fontSize: type.bodyLarge,
+      fontWeight: '900',
+    },
+    identityCard: {
       alignItems: 'center',
-      marginTop: 18,
-      paddingHorizontal: 20,
-      paddingVertical: 26,
+      backgroundColor: colors.panel,
+      borderColor: colors.borderStrong,
+      borderRadius: radius.lg,
+      borderWidth: 1,
+      flexDirection: 'row',
+      gap: 14,
+      marginTop: 16,
+      paddingHorizontal: 16,
+      paddingVertical: 16,
+      ...shadow.raised,
+    },
+    identityText: {
+      flex: 1,
+      minWidth: 0,
+    },
+    itemLabel: {
+      color: colors.text,
+      fontSize: type.bodyLarge,
+      fontWeight: '900',
+    },
+    itemText: {
+      flex: 1,
+      gap: 5,
+      minWidth: 0,
+    },
+    itemValue: {
+      color: colors.mutedStrong,
+      fontSize: type.body,
     },
     loadingCard: {
       alignItems: 'center',
@@ -355,65 +451,77 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       color: colors.mutedStrong,
       fontSize: type.body,
     },
-    infoCard: {
-      borderBottomColor: colors.border,
-      borderBottomWidth: 1,
-      paddingHorizontal: 16,
-      paddingVertical: 16,
-    },
-    infoCardLast: {
-      borderBottomWidth: 0,
-    },
-    infoCardPressed: {
-      opacity: 0.86,
-    },
-    itemLabel: {
-      color: colors.text,
-      fontSize: type.bodyLarge,
-      fontWeight: '700',
-    },
-    itemRow: {
-      alignItems: 'center',
-      flexDirection: 'row',
-      gap: 14,
-    },
-    itemText: {
-      flex: 1,
-      gap: 6,
-    },
-    itemValue: {
-      color: colors.mutedStrong,
-      fontSize: 13,
-    },
     meta: {
       color: colors.mutedStrong,
-      fontSize: 14,
-      marginTop: 4,
+      fontSize: type.body,
+      marginTop: 5,
     },
     name: {
       color: colors.text,
-      fontSize: type.title + 4,
-      fontWeight: '800',
-      marginTop: 14,
+      fontSize: type.title,
+      fontWeight: '900',
     },
     section: {
-      marginTop: 18,
+      marginTop: 20,
     },
     sectionLabel: {
-      color: colors.mutedStrong,
-      fontSize: type.label,
-      fontWeight: '700',
-      letterSpacing: 0.5,
+      color: colors.text,
+      fontSize: type.body,
+      fontWeight: '900',
+      letterSpacing: 0.4,
       textTransform: 'uppercase',
     },
+    signOutCard: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 12,
+      justifyContent: 'space-between',
+      marginTop: 20,
+    },
+    signOutCopy: {
+      color: colors.mutedStrong,
+      fontSize: type.body,
+      lineHeight: 19,
+      marginTop: 4,
+    },
+    signOutText: {
+      flex: 1,
+      minWidth: 0,
+    },
+    signOutTitle: {
+      color: colors.text,
+      fontSize: type.bodyLarge,
+      fontWeight: '900',
+    },
     statCard: {
-      minHeight: 68,
+      backgroundColor: colors.panel,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      flex: 1,
+      minHeight: 76,
+      minWidth: 0,
+      paddingHorizontal: 11,
       paddingVertical: 11,
+      ...shadow.card,
+    },
+    statLabel: {
+      color: colors.mutedStrong,
+      fontSize: type.tiny,
+      fontWeight: '900',
+      letterSpacing: 0.5,
+      marginTop: 4,
+      textTransform: 'uppercase',
     },
     statsRow: {
       flexDirection: 'row',
-      gap: 8,
+      gap: 10,
       marginTop: 14,
+    },
+    statValue: {
+      fontSize: 20,
+      fontWeight: '900',
+      marginTop: 7,
     },
   });
 }

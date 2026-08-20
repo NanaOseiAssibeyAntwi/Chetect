@@ -283,6 +283,26 @@ function createSyntheticActionableEvent(
   };
 }
 
+function normalizeNoFaceActionableEvent(event: LiveDetectorEvent): LiveDetectorEvent {
+  const label = detectorLabelToAnalysisLabel(event.label);
+  if (label !== 'NO_FACE') {
+    return event;
+  }
+
+  const normalizedSeverity = normalizeDetectorSeverity(event.severity);
+  const normalizedSignalCode = String(event.signal_code ?? '').trim();
+  return {
+    ...event,
+    label,
+    max_score: Math.max(getSyntheticEventScoreFloor(label), Number(event.max_score ?? 0)),
+    severity:
+      normalizedSeverity === 'critical' || normalizedSeverity === 'high'
+        ? event.severity
+        : 'high',
+    signal_code: normalizedSignalCode || 'NO_FACE',
+  };
+}
+
 function shouldCreateSyntheticActionableEvent(
   summary: LiveDetectorSummary,
   label: LiveDetectorLabel,
@@ -390,6 +410,8 @@ function buildActionableDetectorSummary(summary: LiveDetectorSummary): LiveDetec
     actionableEvents = [createSyntheticActionableEvent(summary, normalizedFinalLabel)];
     actionableCount = 1;
   }
+
+  actionableEvents = actionableEvents.map(normalizeNoFaceActionableEvent);
 
   const hasOnlyMildHeadPoseOrGazeSignals = doesSummaryOnlyContainMildHeadPoseOrGazeSignals(summary);
   const downgradedFinalLabel =
@@ -820,6 +842,7 @@ export default function ExamSessionScreen() {
   const delayedAlertSoundsRef = useRef<Set<Audio.Sound>>(new Set());
   const delayedAlertTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
   const lastDelayedAlertSoundAtRef = useRef(0);
+  const detectorAlertPlaybackTokenRef = useRef(0);
 
   const configureExamAudio = useCallback(async () => {
     await Audio.setAudioModeAsync({
@@ -963,12 +986,29 @@ export default function ExamSessionScreen() {
     }
 
     lastDelayedAlertSoundAtRef.current = now;
+    const playbackToken = detectorAlertPlaybackTokenRef.current;
     const preloadedSound = detectorAlertSoundRef.current;
     if (preloadedSound) {
-      void preloadedSound.replayAsync().catch(() => {
-        detectorAlertSoundRef.current = null;
-        prepareDetectorAlertSound();
-      });
+      void (async () => {
+        try {
+          await preloadedSound.replayAsync();
+          if (detectorAlertPlaybackTokenRef.current !== playbackToken) {
+            await preloadedSound.stopAsync();
+            return;
+          }
+
+          const timer = setTimeout(() => {
+            delayedAlertTimersRef.current.delete(timer);
+            if (detectorAlertPlaybackTokenRef.current === playbackToken) {
+              void preloadedSound.stopAsync().catch(() => undefined);
+            }
+          }, DELAYED_DETECTOR_ALERT_SOUND_MS);
+          delayedAlertTimersRef.current.add(timer);
+        } catch {
+          detectorAlertSoundRef.current = null;
+          prepareDetectorAlertSound();
+        }
+      })();
       return;
     }
 
@@ -979,9 +1019,14 @@ export default function ExamSessionScreen() {
         await configureExamAudio();
         const { sound } = await Audio.Sound.createAsync(BEEP_SOUND_ASSET, {
           isLooping: false,
-          shouldPlay: true,
+          shouldPlay: false,
           volume: 0.85,
         });
+
+        if (detectorAlertPlaybackTokenRef.current !== playbackToken || !isExamScreenMountedRef.current) {
+          await sound.unloadAsync();
+          return;
+        }
 
         delayedAlertSoundsRef.current.add(sound);
         sound.setOnPlaybackStatusUpdate((status) => {
@@ -990,9 +1035,17 @@ export default function ExamSessionScreen() {
           }
         });
 
+        await sound.playAsync();
+        if (detectorAlertPlaybackTokenRef.current !== playbackToken) {
+          void cleanupDelayedAlertSound(sound);
+          return;
+        }
+
         const timer = setTimeout(() => {
           delayedAlertTimersRef.current.delete(timer);
-          void cleanupDelayedAlertSound(sound);
+          if (detectorAlertPlaybackTokenRef.current === playbackToken) {
+            void cleanupDelayedAlertSound(sound);
+          }
         }, DELAYED_DETECTOR_ALERT_SOUND_MS);
         delayedAlertTimersRef.current.add(timer);
       } catch {
@@ -1001,26 +1054,15 @@ export default function ExamSessionScreen() {
     })();
   }, [cleanupDelayedAlertSound, configureExamAudio, prepareDetectorAlertSound]);
 
-  const stopAllSuspiciousSounds = useCallback(() => {
-    stopLiveSuspiciousAlarm();
+  const stopDetectorAlertSounds = useCallback((options: { resetCooldown?: boolean } = {}) => {
+    detectorAlertPlaybackTokenRef.current += 1;
+    if (options.resetCooldown) {
+      lastDelayedAlertSoundAtRef.current = 0;
+    }
 
-    const detectorAlertSound = detectorAlertSoundRef.current;
-    detectorAlertSoundRef.current = null;
-    detectorAlertSoundLoadingRef.current = false;
-    if (detectorAlertSound) {
-      void (async () => {
-        try {
-          await detectorAlertSound.stopAsync();
-        } catch {
-          // Best effort: audio cleanup must not interrupt the exam.
-        }
-
-        try {
-          await detectorAlertSound.unloadAsync();
-        } catch {
-          // Best effort: audio cleanup must not interrupt the exam.
-        }
-      })();
+    const preloadedSound = detectorAlertSoundRef.current;
+    if (preloadedSound) {
+      void preloadedSound.stopAsync().catch(() => undefined);
     }
 
     for (const timer of delayedAlertTimersRef.current) {
@@ -1046,7 +1088,19 @@ export default function ExamSessionScreen() {
         }
       })();
     }
-  }, [stopLiveSuspiciousAlarm]);
+  }, []);
+
+  const stopAllSuspiciousSounds = useCallback(() => {
+    stopLiveSuspiciousAlarm();
+    stopDetectorAlertSounds();
+
+    const detectorAlertSound = detectorAlertSoundRef.current;
+    detectorAlertSoundRef.current = null;
+    detectorAlertSoundLoadingRef.current = false;
+    if (detectorAlertSound) {
+      void detectorAlertSound.unloadAsync().catch(() => undefined);
+    }
+  }, [stopDetectorAlertSounds, stopLiveSuspiciousAlarm]);
 
   useEffect(() => {
     selectedOptionsRef.current = selectedOptions;
@@ -1310,7 +1364,17 @@ export default function ExamSessionScreen() {
 
       for (const event of events) {
         const label = detectorLabelToAnalysisLabel(event.label);
-        const eventScore = event.max_score;
+        const eventScore =
+          label === 'NO_FACE'
+            ? Math.max(getSyntheticEventScoreFloor(label), Number(event.max_score ?? 0))
+            : event.max_score;
+        const rawEventSeverity = typeof event.severity === 'string' ? event.severity : null;
+        const eventSeverity =
+          label === 'NO_FACE' &&
+          normalizeDetectorSeverity(rawEventSeverity) !== 'critical' &&
+          normalizeDetectorSeverity(rawEventSeverity) !== 'high'
+            ? 'high'
+            : rawEventSeverity;
         const eventStartMs = clipStartTimeMs + Number(event.start_timestamp_seconds) * 1000;
         const eventEndMs = clipStartTimeMs + Number(event.end_timestamp_seconds) * 1000;
         const desiredWindowStartMs = eventStartMs - EVIDENCE_LEAD_SECONDS * 1000;
@@ -1337,8 +1401,13 @@ export default function ExamSessionScreen() {
                   Number(event.end_timestamp_seconds) - Number(event.start_timestamp_seconds)
                 ),
           eventStartOffsetSeconds: Number(event.start_timestamp_seconds),
-          severity: typeof event.severity === 'string' ? event.severity : null,
-          signalCode: typeof event.signal_code === 'string' ? event.signal_code : null,
+          severity: eventSeverity,
+          signalCode:
+            typeof event.signal_code === 'string' && event.signal_code.trim()
+              ? event.signal_code
+              : label === 'NO_FACE'
+              ? 'NO_FACE'
+              : null,
           requestedLeadSeconds: EVIDENCE_LEAD_SECONDS,
           requestedTrailSeconds: EVIDENCE_TRAIL_SECONDS,
           wasTruncated: missingLeadCoverage || needsNextSegment,
@@ -1551,6 +1620,8 @@ export default function ExamSessionScreen() {
 
       if (hasDelayedDetectorSuspicion) {
         playDelayedSuspiciousAlertSound();
+      } else {
+        stopDetectorAlertSounds({ resetCooldown: true });
       }
 
       persistConfirmedAnalysisResult({
@@ -1575,7 +1646,7 @@ export default function ExamSessionScreen() {
           : `Live analysis running. Last confirmed chunk #${sequence}.${processingSuffix}`
       );
     },
-    [persistConfirmedAnalysisResult, playDelayedSuspiciousAlertSound]
+    [persistConfirmedAnalysisResult, playDelayedSuspiciousAlertSound, stopDetectorAlertSounds]
   );
 
   const drainAnalysisResults = useCallback(async () => {

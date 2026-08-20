@@ -2,7 +2,7 @@ import { Feather } from '@expo/vector-icons';
 import { ResizeMode, Video } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useFocusEffect } from '@react-navigation/native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { layout, radius, shadow, type } from '@/constants/design';
+import { font, layout, radius, shadow, type } from '@/constants/design';
 import { ActionButton, InlineMessage, MetricTile } from '@/components/product-ui';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { useCachedResource } from '@/hooks/use-cached-resource';
@@ -525,48 +525,52 @@ export default function InvigilatorMonitorScreen() {
         }
         showsVerticalScrollIndicator={false}>
         <View style={styles.headerCard}>
-        <View style={styles.headerRow}>
-          <Pressable
-            onPress={() => router.navigate('/(invigilator-tabs)')}
-            style={styles.backButton}>
-            <Feather color={colors.mutedStrong} name="chevron-left" size={18} />
-          </Pressable>
-          <View style={styles.headerText}>
-            <Text style={styles.courseCode}>{monitorData?.courseCode ?? 'COURSE'}</Text>
-            <Text style={styles.courseTitle}>{monitorData?.title ?? 'Exam Session'}</Text>
+          <View style={styles.headerRow}>
+            <View style={[styles.liveWrap, { backgroundColor: `${statusColor}16`, borderColor: `${statusColor}40` }]}>
+              <View style={[styles.liveDot, { backgroundColor: statusColor }]} />
+              <Text style={[styles.liveText, { color: statusColor }]}>{statusLabel}</Text>
+            </View>
           </View>
-          <View style={[styles.liveWrap, { backgroundColor: `${statusColor}16`, borderColor: `${statusColor}40` }]}>
-            <View style={[styles.liveDot, { backgroundColor: statusColor }]} />
-            <Text style={[styles.liveText, { color: statusColor }]}>{statusLabel}</Text>
-          </View>
-        </View>
 
-        <View style={styles.statsRow}>
-          <MetricTile
-            accentColor={colors.text}
-            label="Total"
-            style={styles.statTile}
-            value={String(monitorData?.stats.total ?? 0)}
-          />
-          <MetricTile
-            accentColor={colors.success}
-            label="Active"
-            style={styles.statTile}
-            value={String(monitorData?.stats.active ?? 0)}
-          />
-          <MetricTile
-            accentColor={colors.warning}
-            label="Flagged"
-            style={styles.statTile}
-            value={String(monitorData?.stats.flagged ?? 0)}
-          />
-          <MetricTile
-            accentColor={colors.mutedStrong}
-            label="Done"
-            style={styles.statTile}
-            value={String(monitorData?.stats.done ?? 0)}
-          />
-        </View>
+          <View style={styles.headerTitleRow}>
+            <View style={styles.headerText}>
+              <Text style={styles.courseCode}>{monitorData?.courseCode ?? 'COURSE'}</Text>
+              <Text numberOfLines={2} style={styles.courseTitle}>{monitorData?.title ?? 'Exam Session'}</Text>
+              <Text style={styles.headerSubcopy}>
+                {monitorData ? `${monitorData.monitorMode.toUpperCase()} MONITORING` : 'LIVE STUDENT OVERSIGHT'}
+              </Text>
+            </View>
+            <View style={styles.monitorIcon}>
+              <Feather color={colors.warning} name="monitor" size={24} />
+            </View>
+          </View>
+
+          <View style={styles.statsRow}>
+            <MetricTile
+              accentColor={colors.text}
+              label="Total"
+              style={styles.statTile}
+              value={String(monitorData?.stats.total ?? 0)}
+            />
+            <MetricTile
+              accentColor={colors.success}
+              label="Active"
+              style={styles.statTile}
+              value={String(monitorData?.stats.active ?? 0)}
+            />
+            <MetricTile
+              accentColor={colors.warning}
+              label="Flagged"
+              style={styles.statTile}
+              value={String(monitorData?.stats.flagged ?? 0)}
+            />
+            <MetricTile
+              accentColor={colors.mutedStrong}
+              label="Done"
+              style={styles.statTile}
+              value={String(monitorData?.stats.done ?? 0)}
+            />
+          </View>
         </View>
 
         {isLoading ? (
@@ -592,6 +596,14 @@ export default function InvigilatorMonitorScreen() {
             tone="danger"
           />
         ) : null}
+
+        <View style={styles.sectionHeader}>
+          <View>
+            <Text style={styles.sectionTitle}>Students</Text>
+            <Text style={styles.sectionMeta}>Live risk and detector signals</Text>
+          </View>
+          <Feather color={colors.mutedStrong} name="users" size={18} />
+        </View>
 
         <View style={styles.filterRow}>
           {filters.map((filter) => {
@@ -690,7 +702,10 @@ export default function InvigilatorMonitorScreen() {
         )}
 
         <View style={styles.eventsHeader}>
-          <Text style={styles.eventsTitle}>SUSPICIOUS CLIPS</Text>
+          <View>
+            <Text style={styles.eventsTitle}>Suspicious clips</Text>
+            <Text style={styles.eventsSubtitle}>Evidence windows and playback</Text>
+          </View>
           <Text style={styles.eventsCount}>{suspiciousEvents.length} flags</Text>
         </View>
 
@@ -866,16 +881,9 @@ export default function InvigilatorMonitorScreen() {
 
 function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   return StyleSheet.create({
-    backButton: {
-      alignItems: 'center',
-      backgroundColor: colors.panel,
-      borderColor: colors.border,
-      borderRadius: radius.pill,
-      borderWidth: 1,
-      height: 34,
-      justifyContent: 'center',
-      width: 34,
-      ...shadow.card,
+    buttonPressed: {
+      opacity: 0.9,
+      transform: [{ scale: 0.985 }],
     },
     clipList: {
       gap: 8,
@@ -883,26 +891,31 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     clipToggleButton: {
       alignItems: 'center',
-      backgroundColor: colors.tealSoft,
-      borderColor: colors.tealGlow,
-      borderRadius: radius.sm,
+      backgroundColor: colors.warningSoft,
+      borderColor: colors.warningSoft,
+      borderRadius: radius.md,
       borderWidth: 1.5,
       marginTop: 10,
       paddingVertical: 11,
     },
     clipToggleText: {
-      color: colors.teal,
+      color: colors.warning,
+      fontFamily: font.body,
       fontSize: type.body,
-      fontWeight: '700',
+      fontWeight: '900',
     },
     clipWaitingText: {
       color: colors.mutedStrong,
+      fontFamily: font.body,
       fontSize: type.body,
+      lineHeight: 20,
       marginTop: 6,
     },
     clipErrorText: {
       color: colors.danger,
+      fontFamily: font.body,
       fontSize: type.body,
+      lineHeight: 20,
       marginTop: 8,
     },
     content: {
@@ -913,16 +926,19 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       width: '100%',
     },
     courseCode: {
-      color: colors.muted,
-      fontSize: type.label,
-      fontWeight: '700',
-      letterSpacing: 0.5,
+      color: colors.warning,
+      fontFamily: font.body,
+      fontSize: type.tiny,
+      fontWeight: '900',
+      letterSpacing: 1,
       textTransform: 'uppercase',
     },
     courseTitle: {
       color: colors.text,
-      fontSize: type.title,
-      fontWeight: '800',
+      fontFamily: font.display,
+      fontSize: type.display,
+      fontWeight: '900',
+      lineHeight: type.display + 5,
       marginTop: 6,
     },
     emptyCard: {
@@ -935,21 +951,24 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     eventCard: {
       backgroundColor: colors.panel,
       borderColor: colors.border,
-      borderRadius: radius.lg,
+      borderRadius: radius.md,
       borderWidth: 1,
       paddingHorizontal: 14,
       paddingVertical: 14,
       ...shadow.card,
     },
     eventHeader: {
-      alignItems: 'center',
+      alignItems: 'flex-start',
       flexDirection: 'row',
+      gap: 10,
       justifyContent: 'space-between',
     },
     eventHeaderLeft: {
-      alignItems: 'center',
+      alignItems: 'flex-start',
+      flex: 1,
       flexDirection: 'row',
       gap: 8,
+      minWidth: 0,
     },
     alertDetailsRow: {
       flexDirection: 'row',
@@ -967,18 +986,22 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     alertDetailLabel: {
       color: colors.muted,
+      fontFamily: font.body,
       fontSize: 10,
+      fontWeight: '900',
       letterSpacing: 0.9,
     },
     alertDetailValue: {
       color: colors.text,
+      fontFamily: font.body,
       fontSize: type.tiny,
-      fontWeight: '700',
+      fontWeight: '900',
       marginTop: 4,
       textTransform: 'uppercase',
     },
     eventMeta: {
       color: colors.muted,
+      fontFamily: font.body,
       fontSize: type.tiny,
       letterSpacing: 0.4,
       marginTop: 5,
@@ -986,56 +1009,76 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     eventReason: {
       color: colors.text,
+      fontFamily: font.body,
       fontSize: type.bodyLarge,
+      fontWeight: '800',
+      lineHeight: 21,
       marginTop: 10,
     },
     eventStudent: {
       color: colors.text,
+      flex: 1,
+      fontFamily: font.body,
       fontSize: type.body,
-      fontWeight: '700',
+      fontWeight: '900',
+      lineHeight: 18,
     },
     eventTime: {
       color: colors.muted,
+      fontFamily: font.body,
       fontSize: type.tiny,
+      fontWeight: '800',
+      maxWidth: 86,
+      textAlign: 'right',
     },
     eventsCount: {
       color: colors.warning,
+      fontFamily: font.body,
       fontSize: type.body,
-      fontWeight: '700',
+      fontWeight: '900',
     },
     eventsHeader: {
       alignItems: 'center',
       flexDirection: 'row',
       justifyContent: 'space-between',
       marginBottom: 10,
-      marginTop: 20,
+      marginTop: 24,
     },
     eventsList: {
-      gap: 10,
+      gap: 12,
+    },
+    eventsSubtitle: {
+      color: colors.muted,
+      fontFamily: font.body,
+      fontSize: 12,
+      marginTop: 3,
     },
     eventsTitle: {
-      color: colors.mutedStrong,
-      fontSize: type.label,
-      fontWeight: '700',
-      letterSpacing: 0.5,
+      color: colors.text,
+      fontFamily: font.display,
+      fontSize: type.bodyLarge,
+      fontWeight: '900',
+      letterSpacing: 0,
       textTransform: 'uppercase',
     },
     faceBox: {
       alignItems: 'center',
       backgroundColor: colors.panel,
-      borderColor: colors.border,
+      borderColor: colors.borderStrong,
       borderRadius: radius.md,
       borderWidth: 1,
-      height: 30,
+      height: 38,
       justifyContent: 'center',
-      left: '38%',
+      left: '35%',
       position: 'absolute',
-      top: '38%',
-      width: 30,
+      top: '34%',
+      width: 38,
+      ...shadow.card,
     },
     faceInitials: {
-      fontSize: 11,
-      fontWeight: '800',
+      fontFamily: font.body,
+      fontSize: 12,
+      fontWeight: '900',
     },
     filterItem: {
       alignItems: 'center',
@@ -1044,34 +1087,37 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       paddingVertical: 9,
     },
     filterItemActive: {
-      backgroundColor: colors.tealSoft,
+      backgroundColor: colors.warningSoft,
     },
     filterRow: {
-      backgroundColor: colors.panelSoft,
+      backgroundColor: colors.panel,
       borderColor: colors.border,
       borderRadius: radius.pill,
       borderWidth: 1,
       flexDirection: 'row',
       gap: 4,
       marginBottom: 16,
-      marginTop: 6,
+      marginTop: 10,
       padding: 4,
+      ...shadow.card,
     },
     filterText: {
       color: colors.muted,
+      fontFamily: font.body,
       fontSize: type.label,
-      fontWeight: '700',
+      fontWeight: '900',
       letterSpacing: 0.5,
     },
     filterCountText: {
       color: colors.muted,
+      fontFamily: font.body,
       fontSize: type.tiny,
-      fontWeight: '800',
+      fontWeight: '900',
       marginTop: 2,
     },
     filterTextActive: {
-      color: colors.teal,
-      fontWeight: '800',
+      color: colors.warning,
+      fontWeight: '900',
     },
     flagChip: {
       alignItems: 'center',
@@ -1088,8 +1134,9 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       marginTop: 12,
     },
     flagText: {
+      fontFamily: font.body,
       fontSize: 9,
-      fontWeight: '700',
+      fontWeight: '900',
     },
     grid: {
       columnGap: 8,
@@ -1099,22 +1146,37 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     headerCard: {
       backgroundColor: colors.panel,
-      borderColor: colors.border,
+      borderColor: colors.borderStrong,
       borderRadius: radius.lg,
       borderWidth: 1,
-      marginBottom: 12,
-      padding: 12,
-      ...shadow.card,
+      marginBottom: 14,
+      padding: 14,
+      ...shadow.raised,
     },
     headerRow: {
       alignItems: 'center',
       flexDirection: 'row',
-      justifyContent: 'space-between',
+      justifyContent: 'flex-end',
       marginBottom: 14,
+    },
+    headerSubcopy: {
+      color: colors.mutedStrong,
+      fontFamily: font.body,
+      fontSize: type.tiny,
+      fontWeight: '900',
+      letterSpacing: 0.7,
+      marginTop: 8,
+      textTransform: 'uppercase',
     },
     headerText: {
       flex: 1,
-      marginLeft: 6,
+      minWidth: 0,
+    },
+    headerTitleRow: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 14,
+      marginBottom: 14,
     },
     levelBadge: {
       borderRadius: radius.pill,
@@ -1123,8 +1185,9 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       paddingVertical: 4,
     },
     levelText: {
+      fontFamily: font.body,
       fontSize: type.tiny,
-      fontWeight: '800',
+      fontWeight: '900',
       letterSpacing: 0.8,
     },
     liveDot: {
@@ -1133,8 +1196,9 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       width: 6,
     },
     liveText: {
+      fontFamily: font.body,
       fontSize: type.label,
-      fontWeight: '700',
+      fontWeight: '900',
       letterSpacing: 0.5,
     },
     liveWrap: {
@@ -1162,7 +1226,19 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     loadingText: {
       color: colors.mutedStrong,
+      fontFamily: font.body,
       fontSize: type.body,
+      fontWeight: '700',
+    },
+    monitorIcon: {
+      alignItems: 'center',
+      backgroundColor: colors.warningSoft,
+      borderColor: colors.warningSoft,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      height: 54,
+      justifyContent: 'center',
+      width: 54,
     },
     riskBadge: {
       borderRadius: radius.pill,
@@ -1174,8 +1250,9 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       top: 8,
     },
     riskText: {
+      fontFamily: font.body,
       fontSize: type.tiny,
-      fontWeight: '800',
+      fontWeight: '900',
       letterSpacing: 0.8,
     },
     safeArea: {
@@ -1184,10 +1261,10 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     scanBox: {
       backgroundColor: colors.panelSoft,
-      borderTopLeftRadius: radius.lg,
-      borderTopRightRadius: radius.lg,
+      borderTopLeftRadius: radius.md,
+      borderTopRightRadius: radius.md,
       borderTopWidth: 3,
-      height: 120,
+      height: 116,
       overflow: 'hidden',
       position: 'relative',
     },
@@ -1203,8 +1280,9 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     score: {
       bottom: 10,
+      fontFamily: font.display,
       fontSize: type.title,
-      fontWeight: '800',
+      fontWeight: '900',
       position: 'absolute',
       right: 10,
     },
@@ -1218,7 +1296,9 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     segmentMeta: {
       color: colors.muted,
+      fontFamily: font.body,
       fontSize: type.tiny,
+      fontWeight: '800',
       letterSpacing: 0.4,
       marginBottom: 4,
     },
@@ -1230,9 +1310,9 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       width: '100%',
     },
     statTile: {
-      minHeight: 72,
-      paddingHorizontal: 10,
-      paddingVertical: 10,
+      minHeight: 70,
+      paddingHorizontal: 9,
+      paddingVertical: 9,
     },
     statsRow: {
       flexDirection: 'row',
@@ -1246,7 +1326,7 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     studentCard: {
       backgroundColor: colors.panel,
       borderColor: colors.border,
-      borderRadius: radius.lg,
+      borderRadius: radius.md,
       borderWidth: 1,
       overflow: 'hidden',
       width: '48.5%',
@@ -1254,27 +1334,53 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     studentId: {
       color: colors.muted,
+      fontFamily: font.body,
       fontSize: 10,
+      fontWeight: '800',
       marginTop: 4,
     },
     studentName: {
       color: colors.text,
+      fontFamily: font.body,
       fontSize: type.bodyLarge,
-      fontWeight: '700',
+      fontWeight: '900',
     },
     studentStatus: {
       color: colors.mutedStrong,
+      fontFamily: font.body,
       fontSize: type.tiny,
+      fontWeight: '900',
       letterSpacing: 0.4,
       marginTop: 6,
       textTransform: 'uppercase',
     },
     studentObservation: {
       color: colors.mutedStrong,
+      fontFamily: font.body,
       fontSize: type.tiny,
       lineHeight: 16,
       marginTop: 4,
       minHeight: 32,
+    },
+    sectionHeader: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginBottom: 0,
+      marginTop: 4,
+    },
+    sectionMeta: {
+      color: colors.muted,
+      fontFamily: font.body,
+      fontSize: 12,
+      marginTop: 3,
+    },
+    sectionTitle: {
+      color: colors.text,
+      fontFamily: font.display,
+      fontSize: type.bodyLarge,
+      fontWeight: '900',
+      textTransform: 'uppercase',
     },
   });
 }

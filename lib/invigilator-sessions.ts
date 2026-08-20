@@ -104,12 +104,15 @@ type SuspiciousEventRow = {
 };
 
 type AnalysisScoreRow = {
+  final_label: AnalysisLabel | null;
   max_score: number | null;
 };
 
 type SuspiciousEventCountRow = {
   exam_id: string;
   id: string;
+  label?: AnalysisLabel | null;
+  max_score?: number | null;
 };
 
 type NotificationRow = {
@@ -666,22 +669,60 @@ const MONITOR_RISK_WEIGHT: Record<MonitorRiskLevel, number> = {
   low: 1,
   medium: 2,
 };
+const NO_FACE_RISK_SCORE_FLOOR = 85;
+
+function isNoFaceLabel(label: AnalysisLabel | string | null | undefined) {
+  return String(label ?? '').trim().toUpperCase() === 'NO_FACE';
+}
+
+function normalizeNoFaceScore(
+  label: AnalysisLabel | string | null | undefined,
+  score: number | string | null | undefined
+) {
+  const normalizedScore = toNumber(score);
+  return isNoFaceLabel(label)
+    ? Math.max(normalizedScore, NO_FACE_RISK_SCORE_FLOOR)
+    : normalizedScore;
+}
+
+function getHigherMonitorRiskLevel(
+  currentRisk: MonitorRiskLevel,
+  riskFloor: MonitorRiskLevel
+) {
+  return MONITOR_RISK_WEIGHT[currentRisk] >= MONITOR_RISK_WEIGHT[riskFloor]
+    ? currentRisk
+    : riskFloor;
+}
+
+function normalizeNoFaceSeverity(
+  label: AnalysisLabel | string | null | undefined,
+  severity: string | null
+) {
+  if (!isNoFaceLabel(label)) {
+    return severity;
+  }
+
+  const normalizedSeverity = String(severity ?? '').trim().toLowerCase();
+  return normalizedSeverity === 'critical' || normalizedSeverity === 'high'
+    ? normalizedSeverity
+    : 'high';
+}
 
 function deriveMonitorRiskLevel(
   maxScore: number,
   suspiciousEventCount: number,
   finalLabel: AnalysisLabel | null
 ): MonitorRiskLevel {
-  void finalLabel;
-  if (maxScore >= 90 || suspiciousEventCount >= 4) {
+  const normalizedMaxScore = normalizeNoFaceScore(finalLabel, maxScore);
+  if (normalizedMaxScore >= 90 || suspiciousEventCount >= 4) {
     return 'critical';
   }
 
-  if (maxScore >= 75 || suspiciousEventCount >= 2) {
+  if (normalizedMaxScore >= 75 || suspiciousEventCount >= 2) {
     return 'high';
   }
 
-  if (maxScore >= 45 || suspiciousEventCount >= 1) {
+  if (normalizedMaxScore >= 45 || suspiciousEventCount >= 1) {
     return 'medium';
   }
 
@@ -872,7 +913,7 @@ export async function fetchInvigilatorProfileData(): Promise<InvigilatorProfileD
           .returns<InvigilatorProfileOverviewRow[]>(),
         supabase
           .from('analysis_sessions')
-          .select('max_score')
+          .select('max_score, final_label')
           .in('exam_id', examIds)
           .returns<AnalysisScoreRow[]>(),
       ]);
@@ -892,7 +933,7 @@ export async function fetchInvigilatorProfileData(): Promise<InvigilatorProfileD
       0
     );
 
-    const scores = (scoreRows ?? []).map((row) => toNumber(row.max_score));
+    const scores = (scoreRows ?? []).map((row) => normalizeNoFaceScore(row.final_label, row.max_score));
     if (scores.length > 0) {
       const averageRisk = scores.reduce((sum, score) => sum + score, 0) / scores.length;
       averageTrust = Math.max(0, Math.round(100 - averageRisk));
@@ -949,6 +990,31 @@ export async function fetchInvigilatorNotifications(): Promise<InvigilatorNotifi
     title: String(row.title ?? '').trim() || 'Notification',
     type: String(row.notification_type ?? '').trim() || 'general',
   }));
+}
+
+export async function setInvigilatorNotificationReadState({
+  isRead,
+  notificationId,
+}: {
+  isRead: boolean;
+  notificationId: string;
+}) {
+  const profile = await getCurrentProfile();
+  const normalizedNotificationId = notificationId.trim();
+
+  if (!normalizedNotificationId) {
+    throw new Error('No notification selected.');
+  }
+
+  const { error } = await supabase
+    .from('notifications')
+    .update({ read_at: isRead ? new Date().toISOString() : null })
+    .eq('id', normalizedNotificationId)
+    .eq('user_id', profile.id);
+
+  if (error) {
+    throw new Error(`Unable to update notification: ${error.message}`);
+  }
 }
 
 export async function fetchInvigilatorAuditHistory(): Promise<InvigilatorAuditHistoryItem[]> {
@@ -1031,7 +1097,7 @@ export async function fetchInvigilatorReports(): Promise<InvigilatorReportsData>
       .returns<ExamTimingRow[]>(),
     supabase
       .from('suspicious_events')
-      .select('id, exam_id')
+      .select('id, exam_id, label, max_score')
       .in('exam_id', examIds)
       .returns<SuspiciousEventCountRow[]>(),
   ]);
@@ -1050,9 +1116,17 @@ export async function fetchInvigilatorReports(): Promise<InvigilatorReportsData>
 
   const timingByExamId = new Map((examTimingRows ?? []).map((row) => [row.id, row]));
   const suspiciousCountByExamId = new Map<string, number>();
+  const highestSuspiciousEventScoreByExamId = new Map<string, number>();
 
   for (const row of suspiciousRows ?? []) {
     suspiciousCountByExamId.set(row.exam_id, (suspiciousCountByExamId.get(row.exam_id) ?? 0) + 1);
+    highestSuspiciousEventScoreByExamId.set(
+      row.exam_id,
+      Math.max(
+        highestSuspiciousEventScoreByExamId.get(row.exam_id) ?? 0,
+        normalizeNoFaceScore(row.label, row.max_score)
+      )
+    );
   }
 
   const now = Date.now();
@@ -1067,7 +1141,10 @@ export async function fetchInvigilatorReports(): Promise<InvigilatorReportsData>
         scheduledStartIso: scheduledStart,
         status: timing?.status ?? row.status,
       });
-      const highestScore = toNumber(row.highest_score);
+      const highestScore = Math.max(
+        toNumber(row.highest_score),
+        highestSuspiciousEventScoreByExamId.get(row.exam_id) ?? 0
+      );
 
       return {
         courseCode: String(row.course_code ?? '').trim().toUpperCase() || 'COURSE',
@@ -1120,7 +1197,7 @@ export async function fetchInvigilatorReportDetails(
     await Promise.all([
       supabase
         .from('analysis_sessions')
-        .select('max_score')
+        .select('max_score, final_label')
         .eq('exam_id', examId)
         .returns<AnalysisScoreRow[]>(),
       fetchInvigilatorSessionDetails({ examIdInput: examId }),
@@ -1131,7 +1208,10 @@ export async function fetchInvigilatorReportDetails(
     throw new Error(`Unable to load report trust scores: ${scoreError.message}`);
   }
 
-  const scores = (scoreRows ?? []).map((row) => toNumber(row.max_score));
+  const scores = [
+    ...(scoreRows ?? []).map((row) => normalizeNoFaceScore(row.final_label, row.max_score)),
+    ...suspiciousEvents.map((eventRow) => eventRow.maxScore),
+  ];
   const highestScore = scores.length > 0 ? Math.max(...scores) : 0;
 
   return {
@@ -1253,9 +1333,9 @@ export async function fetchInvigilatorMonitorData(
       .trim()
       .toLowerCase();
     const sessionStatus = latestSession?.status ?? null;
-    const score = toNumber(latestSession?.max_score);
-    const suspiciousEventCount = toNumber(latestSession?.suspicious_event_count);
     const finalLabel = latestSession?.final_label ?? null;
+    const score = normalizeNoFaceScore(finalLabel, latestSession?.max_score);
+    const suspiciousEventCount = toNumber(latestSession?.suspicious_event_count);
     const latestObservation = String(latestSession?.latest_observation ?? '').trim();
     const riskLevel = deriveMonitorRiskLevel(score, suspiciousEventCount, finalLabel);
     const institutionalId =
@@ -1391,8 +1471,18 @@ export async function fetchInvigilatorSuspiciousEvents(
         toNumber(evidence?.ai.eventDurationSeconds) ||
           (toNumber(eventRow.end_timestamp_seconds) - toNumber(eventRow.start_timestamp_seconds))
       );
-      const eventSeverity = String(evidence?.ai.severity ?? '').trim().toLowerCase() || null;
+      const eventSeverity = normalizeNoFaceSeverity(
+        eventRow.label,
+        String(evidence?.ai.severity ?? '').trim().toLowerCase() || null
+      );
       const eventSignalCode = String(evidence?.ai.signalCode ?? '').trim() || null;
+      const eventMaxScore = normalizeNoFaceScore(eventRow.label, eventRow.max_score);
+      const eventRiskLevel = isNoFaceLabel(eventRow.label)
+        ? getHigherMonitorRiskLevel(
+            normalizeMonitorRiskLevel(String(eventRow.risk_level ?? 'medium')),
+            deriveMonitorRiskLevel(eventMaxScore, 1, eventRow.label)
+          )
+        : normalizeMonitorRiskLevel(String(eventRow.risk_level ?? 'medium'));
       const windowStartMs = toTimestampMs(evidence?.windowStartIso ?? null);
       const eventStartMs =
         windowStartMs === null ? null : windowStartMs + requestedLeadSeconds * 1000;
@@ -1488,9 +1578,9 @@ export async function fetchInvigilatorSuspiciousEvents(
         endTimestampSeconds: toNumber(eventRow.end_timestamp_seconds),
         id: eventRow.id,
         label: eventRow.label,
-        maxScore: toNumber(eventRow.max_score),
+        maxScore: eventMaxScore,
         reason: eventRow.reason,
-        riskLevel: normalizeMonitorRiskLevel(String(eventRow.risk_level ?? 'medium')),
+        riskLevel: eventRiskLevel,
         severity: eventSeverity,
         signalCode: eventSignalCode,
         requestedLeadSeconds,

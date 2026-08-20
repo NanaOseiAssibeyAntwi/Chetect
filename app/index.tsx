@@ -1,38 +1,35 @@
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BrandMark } from '@/components/brand-mark';
 import { useEntryAccents, type EntryAccent } from '@/components/entry-shell';
-import { layout, radius, shadow, type } from '@/constants/design';
+import { font, layout, radius, shadow, type } from '@/constants/design';
 import { useAppTheme } from '@/hooks/use-app-theme';
 
 type RoleDefinition = {
   accent: EntryAccent;
-  description: string;
   href: '/sign-in' | '/invigilator-sign-in';
-  icon: (color: string) => React.ReactNode;
-  meta: string;
+  icon: (color: string) => ReactNode;
+  label: string;
   title: string;
 };
 
 const roleDefinitions: readonly RoleDefinition[] = [
   {
     accent: 'teal',
-    description: 'Enter scheduled exams and view your session records.',
     href: '/sign-in',
-    icon: (color) => <Feather color={color} name="user-check" size={22} />,
-    meta: 'Student portal',
+    icon: (color) => <MaterialCommunityIcons color={color} name="school-outline" size={27} />,
+    label: 'Exam portal',
     title: 'Student',
   },
   {
     accent: 'warning',
-    description: 'Create sessions, monitor activity, and review alerts.',
     href: '/invigilator-sign-in',
-    icon: (color) => <MaterialCommunityIcons color={color} name="shield-account-outline" size={23} />,
-    meta: 'Staff portal',
+    icon: (color) => <MaterialCommunityIcons color={color} name="shield-account-outline" size={28} />,
+    label: 'Staff portal',
     title: 'Invigilator',
   },
 ] as const;
@@ -43,25 +40,23 @@ export default function LandingScreen() {
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   return (
-    <SafeAreaView edges={['top']} style={styles.safeArea}>
-      <View pointerEvents="none" style={styles.backgroundLayer} />
-
+    <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.heroBlock}>
-          <View style={styles.brandStage}>
-            <BrandMark accent="teal" size={76} />
+        <View style={styles.brandBlock}>
+          <View style={styles.brandFrame}>
+            <BrandMark accent="teal" size={72} />
           </View>
-
-          <Text style={styles.brandLabel}>KNUST exam access</Text>
-          <Text style={styles.heroLine}>Chetect</Text>
-          <Text style={styles.heroCopy}>Secure exam entry for students and invigilators.</Text>
+          <Text style={styles.institution}>KNUST</Text>
+          <Text style={styles.brandTitle}>Chetect</Text>
         </View>
 
-        <View style={styles.selectorHeader}>
-          <Text style={styles.sectionLabel}>Continue as</Text>
+        <View style={styles.selectorBlock}>
+          <View style={styles.selectorRule} />
+          <Text style={styles.selectorText}>Choose your portal</Text>
+          <View style={styles.selectorRule} />
         </View>
 
-        <View style={styles.roleList}>
+        <View style={styles.roleStack}>
           {roleDefinitions.map((role) => {
             const tone = accents[role.accent];
 
@@ -71,24 +66,20 @@ export default function LandingScreen() {
                 android_ripple={{ color: tone.soft }}
                 onPress={() => router.push(role.href)}
                 style={({ pressed }) => [
-                  styles.roleCard,
-                  { backgroundColor: colors.panel, borderColor: tone.border },
-                  pressed && styles.roleCardPressed,
+                  styles.roleButton,
+                  {
+                    backgroundColor: colors.panel,
+                    borderColor: pressed ? tone.accent : colors.border,
+                  },
+                  pressed ? styles.roleButtonPressed : null,
                 ]}>
-                <View style={[styles.roleAccent, { backgroundColor: tone.accent }]} />
-                <View
-                  style={[
-                    styles.roleIconBox,
-                    { backgroundColor: colors.panelSoft, borderColor: tone.border },
-                  ]}>
+                <View style={[styles.roleMark, { backgroundColor: tone.accent }]} />
+                <View style={[styles.roleIcon, { backgroundColor: tone.soft, borderColor: tone.border }]}>
                   {role.icon(tone.accent)}
                 </View>
-                <View style={styles.roleTextBlock}>
-                  <View style={[styles.roleMetaPill, { backgroundColor: tone.soft }]}>
-                    <Text style={[styles.roleMeta, { color: tone.accent }]}>{role.meta}</Text>
-                  </View>
+                <View style={styles.roleText}>
                   <Text style={styles.roleTitle}>{role.title}</Text>
-                  <Text style={styles.roleDescription}>{role.description}</Text>
+                  <Text style={[styles.roleLabel, { color: tone.accent }]}>{role.label}</Text>
                 </View>
                 <View style={[styles.roleArrow, { backgroundColor: tone.soft, borderColor: tone.border }]}>
                   <Feather color={tone.accent} name="arrow-right" size={18} />
@@ -98,9 +89,9 @@ export default function LandingScreen() {
           })}
         </View>
 
-        <View style={styles.footerPill}>
+        <View style={styles.footer}>
           <Feather color={colors.success} name="lock" size={13} />
-          <Text style={styles.footerText}>Verified institutional access</Text>
+          <Text style={styles.footerText}>Secure institutional access</Text>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -109,174 +100,153 @@ export default function LandingScreen() {
 
 function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   return StyleSheet.create({
-    backgroundLayer: {
-      ...StyleSheet.absoluteFillObject,
-      backgroundColor: colors.background,
-    },
-    brandLabel: {
-      color: colors.mutedStrong,
-      fontSize: type.body,
-      fontWeight: '800',
-      letterSpacing: 1.2,
-      marginTop: 18,
-      textAlign: 'center',
-      textTransform: 'uppercase',
-    },
-    brandStage: {
+    brandBlock: {
       alignItems: 'center',
-      alignSelf: 'center',
+      marginBottom: 30,
+    },
+    brandFrame: {
+      alignItems: 'center',
       backgroundColor: colors.panel,
-      borderColor: colors.border,
-      borderRadius: radius.pill,
+      borderColor: colors.borderStrong,
+      borderRadius: radius.lg,
       borderWidth: 1,
-      height: 96,
+      height: 98,
       justifyContent: 'center',
-      width: 96,
-      ...shadow.card,
+      width: 98,
+      ...shadow.raised,
+    },
+    brandTitle: {
+      color: colors.text,
+      fontFamily: font.display,
+      fontSize: type.hero + 1,
+      fontWeight: '900',
+      letterSpacing: 0,
+      lineHeight: type.hero + 8,
+      marginTop: 5,
+      textAlign: 'center',
     },
     content: {
       alignSelf: 'center',
-      alignItems: 'stretch',
       flexGrow: 1,
-      justifyContent: 'flex-start',
+      justifyContent: 'center',
       maxWidth: layout.maxWidth,
-      paddingBottom: layout.bottomPadding + 6,
+      paddingBottom: layout.bottomPadding,
       paddingHorizontal: layout.screenPadding,
-      paddingTop: 36,
+      paddingTop: 30,
       width: '100%',
     },
-    footerPill: {
+    footer: {
       alignItems: 'center',
       alignSelf: 'center',
-      backgroundColor: colors.panel,
+      backgroundColor: colors.successSoft,
       borderColor: colors.border,
       borderRadius: radius.pill,
       borderWidth: 1,
       flexDirection: 'row',
       gap: 7,
-      marginTop: 18,
+      marginTop: 22,
       paddingHorizontal: 14,
-      paddingVertical: 8,
-      ...shadow.card,
+      paddingVertical: 9,
     },
     footerText: {
       color: colors.mutedStrong,
+      fontFamily: font.body,
       fontSize: type.body,
       fontWeight: '800',
     },
-    heroBlock: {
-      alignItems: 'center',
-      borderBottomColor: colors.border,
-      borderBottomWidth: 1,
-      marginBottom: 24,
-      paddingBottom: 24,
-      paddingTop: 10,
-      width: '100%',
-    },
-    heroCopy: {
-      color: colors.muted,
-      fontSize: type.bodyLarge,
-      lineHeight: 22,
-      marginTop: 8,
-      maxWidth: 360,
-      textAlign: 'center',
-    },
-    heroLine: {
-      color: colors.text,
-      fontSize: type.hero,
+    institution: {
+      color: colors.mutedStrong,
+      fontFamily: font.body,
+      fontSize: type.tiny,
       fontWeight: '900',
-      letterSpacing: 0,
-      lineHeight: type.hero + 8,
+      letterSpacing: 2,
+      marginTop: 18,
       textAlign: 'center',
-    },
-    roleAccent: {
-      borderBottomLeftRadius: radius.md,
-      borderTopLeftRadius: radius.md,
-      bottom: 0,
-      left: 0,
-      position: 'absolute',
-      top: 0,
-      width: 5,
     },
     roleArrow: {
       alignItems: 'center',
-      backgroundColor: colors.panel,
-      borderRadius: radius.pill,
-      borderWidth: 1,
-      height: 38,
-      justifyContent: 'center',
-      width: 38,
-    },
-    roleCard: {
-      alignItems: 'center',
       borderRadius: radius.md,
       borderWidth: 1,
-      flexDirection: 'row',
-      gap: 14,
-      minHeight: 112,
-      overflow: 'hidden',
-      paddingBottom: 16,
-      paddingLeft: 22,
-      paddingRight: 14,
-      paddingTop: 16,
-      ...shadow.card,
+      height: 42,
+      justifyContent: 'center',
+      width: 42,
     },
-    roleCardPressed: {
-      opacity: 0.92,
-      transform: [{ scale: 0.995 }],
-    },
-    roleDescription: {
-      color: colors.muted,
-      fontSize: type.body,
-      lineHeight: 18,
-    },
-    roleIconBox: {
+    roleButton: {
       alignItems: 'center',
       borderRadius: radius.lg,
       borderWidth: 1,
-      height: 54,
-      justifyContent: 'center',
-      width: 54,
-    },
-    roleList: {
+      flexDirection: 'row',
       gap: 14,
+      minHeight: 98,
+      overflow: 'hidden',
+      paddingLeft: 20,
+      paddingRight: 14,
+      paddingVertical: 16,
+      ...shadow.card,
+    },
+    roleButtonPressed: {
+      opacity: 0.94,
+      transform: [{ scale: 0.995 }],
+    },
+    roleIcon: {
+      alignItems: 'center',
+      borderRadius: radius.md,
+      borderWidth: 1,
+      height: 56,
+      justifyContent: 'center',
+      width: 56,
+    },
+    roleLabel: {
+      fontFamily: font.body,
+      fontSize: type.body,
+      fontWeight: '900',
+      marginTop: 4,
+    },
+    roleMark: {
+      bottom: 16,
+      borderRadius: radius.pill,
+      left: 10,
+      position: 'absolute',
+      top: 16,
+      width: 4,
+    },
+    roleStack: {
+      gap: 12,
       width: '100%',
     },
-    roleMeta: {
-      fontSize: type.tiny,
-      fontWeight: '800',
-      letterSpacing: 0.7,
-      textTransform: 'uppercase',
-    },
-    roleMetaPill: {
-      alignSelf: 'flex-start',
-      borderRadius: radius.pill,
-      paddingHorizontal: 8,
-      paddingVertical: 3,
-    },
-    roleTextBlock: {
+    roleText: {
       flex: 1,
-      gap: 5,
+      minWidth: 0,
     },
     roleTitle: {
       color: colors.text,
-      fontSize: type.title + 1,
-      fontWeight: '800',
+      fontFamily: font.display,
+      fontSize: type.title + 4,
+      fontWeight: '900',
+      lineHeight: 28,
     },
     safeArea: {
       backgroundColor: colors.background,
       flex: 1,
     },
-    sectionLabel: {
-      color: colors.mutedStrong,
-      fontSize: type.body,
-      fontWeight: '800',
-      letterSpacing: 0.4,
-      textAlign: 'center',
-    },
-    selectorHeader: {
+    selectorBlock: {
       alignItems: 'center',
-      marginBottom: 12,
+      flexDirection: 'row',
+      gap: 12,
+      marginBottom: 16,
+    },
+    selectorRule: {
+      backgroundColor: colors.border,
+      flex: 1,
+      height: 1,
+    },
+    selectorText: {
+      color: colors.mutedStrong,
+      fontFamily: font.body,
+      fontSize: type.body,
+      fontWeight: '900',
+      letterSpacing: 0.5,
+      textTransform: 'uppercase',
     },
   });
 }

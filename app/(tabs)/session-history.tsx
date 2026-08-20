@@ -1,12 +1,12 @@
-import { Feather } from '@expo/vector-icons';
+import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
 import { useCallback, useMemo } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AppScreen } from '@/components/app-screen';
-import { ActionButton, AccentBadge, InlineMessage, SurfaceCard } from '@/components/product-ui';
-import { layout, radius, type } from '@/constants/design';
+import { ActionButton, InlineMessage, SurfaceCard } from '@/components/product-ui';
+import { layout, radius, shadow, type } from '@/constants/design';
 import { useCachedResource } from '@/hooks/use-cached-resource';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import {
@@ -31,16 +31,16 @@ function formatSubmittedAt(isoDate: string) {
   });
 }
 
-function getScoreTone(scorePercent: number) {
+function getScoreColor(scorePercent: number, colors: ReturnType<typeof useAppTheme>['colors']) {
   if (scorePercent >= 70) {
-    return 'success' as const;
+    return colors.success;
   }
 
   if (scorePercent >= 50) {
-    return 'warning' as const;
+    return colors.warning;
   }
 
-  return 'danger' as const;
+  return colors.danger;
 }
 
 export default function SessionHistoryScreen() {
@@ -67,20 +67,26 @@ export default function SessionHistoryScreen() {
   );
 
   return (
-    <AppScreen contentContainerStyle={styles.content} edges={['top']}>
+    <AppScreen accent="teal" contentContainerStyle={styles.content} edges={['top']}>
       <View style={styles.headerRow}>
         <Pressable onPress={() => router.navigate('/(tabs)/profile')} style={styles.backButton}>
           <Feather color={colors.mutedStrong} name="chevron-left" size={18} />
         </Pressable>
-        <Text style={styles.eyebrow}>SESSION HISTORY</Text>
+        <View style={styles.headerText}>
+          <Text style={styles.eyebrow}>SESSION HISTORY</Text>
+          <Text style={styles.headerTitle}>Completed exams</Text>
+        </View>
       </View>
 
-      <SurfaceCard style={styles.heroCard}>
-        <View>
-          <Text style={styles.title}>Completed Exams</Text>
+      <View style={styles.heroCard}>
+        <View style={styles.heroIcon}>
+          <MaterialCommunityIcons color={colors.teal} name="file-document-check-outline" size={24} />
+        </View>
+        <View style={styles.heroText}>
+          <Text style={styles.title}>Result archive</Text>
           <Text style={styles.meta}>{history.length} submitted sessions</Text>
         </View>
-      </SurfaceCard>
+      </View>
 
       {isLoading ? (
         <SurfaceCard style={styles.loadingCard} tone="muted">
@@ -116,36 +122,38 @@ export default function SessionHistoryScreen() {
       ) : null}
 
       <View style={styles.list}>
-        {history.map((item) => (
-          <Pressable
-            key={item.attemptId}
-            onPress={() =>
-              router.push({
-                pathname: '/(tabs)/results',
-                params: { examId: item.examId },
-              })
-            }
-            style={({ pressed }) => (pressed ? styles.historyPressed : null)}>
-            <SurfaceCard>
+        {history.map((item) => {
+          const scoreColor = getScoreColor(item.scorePercent, colors);
+
+          return (
+            <Pressable
+              key={item.attemptId}
+              onPress={() =>
+                router.push({
+                  pathname: '/(tabs)/results',
+                  params: { examId: item.examId },
+                })
+              }
+              style={({ pressed }) => [styles.historyCard, pressed ? styles.historyPressed : null]}>
               <View style={styles.historyHeader}>
-                <View style={styles.historyTitleBlock}>
-                  <Text style={styles.courseCode}>{item.courseCode}</Text>
-                  <Text style={styles.examTitle}>{item.examTitle}</Text>
+                <View style={styles.courseBadge}>
+                  <Text numberOfLines={1} style={styles.courseCode}>{item.courseCode}</Text>
                 </View>
-                <AccentBadge label={`${item.scorePercent}%`} tone={getScoreTone(item.scorePercent)} />
+                <View style={[styles.scoreBadge, { borderColor: scoreColor }]}>
+                  <Text style={[styles.scoreBadgeText, { color: scoreColor }]}>{item.scorePercent}%</Text>
+                </View>
               </View>
-              <Text style={styles.courseTitle}>{item.courseTitle}</Text>
+              <Text numberOfLines={2} style={styles.examTitle}>{item.examTitle}</Text>
+              <Text numberOfLines={1} style={styles.courseTitle}>{item.courseTitle}</Text>
               <Text style={styles.submittedAt}>{formatSubmittedAt(item.submittedAt)}</Text>
               <View style={styles.resultRow}>
-                <Text style={styles.resultMeta}>
-                  {item.correctAnswers} / {item.totalQuestions} correct
-                </Text>
+                <Text style={styles.resultMeta}>{item.correctAnswers} / {item.totalQuestions} correct</Text>
                 <Text style={styles.integrityText}>INTEGRITY {item.integrity}</Text>
               </View>
-              <Text style={styles.remark}>{item.remark}</Text>
-            </SurfaceCard>
-          </Pressable>
-        ))}
+              <Text numberOfLines={2} style={styles.remark}>{item.remark}</Text>
+            </Pressable>
+          );
+        })}
       </View>
     </AppScreen>
   );
@@ -159,62 +167,112 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       borderColor: colors.border,
       borderRadius: radius.md,
       borderWidth: 1,
-      height: 28,
+      height: 34,
       justifyContent: 'center',
-      width: 28,
+      width: 34,
     },
     content: {
       paddingBottom: layout.bottomPadding,
     },
+    courseBadge: {
+      backgroundColor: colors.tealSoft,
+      borderColor: colors.tealGlow,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      maxWidth: '58%',
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+    },
     courseCode: {
-      color: colors.muted,
+      color: colors.teal,
       fontSize: type.tiny,
-      fontWeight: '700',
+      fontWeight: '900',
       letterSpacing: 0.7,
     },
     courseTitle: {
       color: colors.mutedStrong,
       fontSize: type.body,
-      marginTop: 8,
+      marginTop: 7,
     },
     eyebrow: {
-      color: colors.mutedStrong,
-      fontSize: type.label,
-      fontWeight: '700',
-      letterSpacing: 0.5,
+      color: colors.teal,
+      fontSize: type.tiny,
+      fontWeight: '900',
+      letterSpacing: 1,
       textTransform: 'uppercase',
     },
     examTitle: {
       color: colors.text,
       fontSize: type.title,
-      fontWeight: '800',
-      marginTop: 6,
+      fontWeight: '900',
+      lineHeight: 24,
+      marginTop: 12,
     },
     headerRow: {
       alignItems: 'center',
       flexDirection: 'row',
       gap: 10,
     },
+    headerText: {
+      flex: 1,
+      gap: 3,
+    },
+    headerTitle: {
+      color: colors.text,
+      fontSize: type.bodyLarge,
+      fontWeight: '900',
+    },
     heroCard: {
-      marginTop: 18,
+      alignItems: 'center',
+      backgroundColor: colors.panel,
+      borderColor: colors.borderStrong,
+      borderRadius: radius.lg,
+      borderWidth: 1,
+      flexDirection: 'row',
+      gap: 13,
+      marginTop: 16,
+      paddingHorizontal: 16,
+      paddingVertical: 15,
+      ...shadow.raised,
+    },
+    heroIcon: {
+      alignItems: 'center',
+      backgroundColor: colors.tealSoft,
+      borderColor: colors.tealGlow,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      height: 44,
+      justifyContent: 'center',
+      width: 44,
+    },
+    heroText: {
+      flex: 1,
+    },
+    historyCard: {
+      backgroundColor: colors.panel,
+      borderColor: colors.border,
+      borderLeftColor: colors.teal,
+      borderLeftWidth: 3,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      paddingHorizontal: 14,
+      paddingVertical: 14,
+      ...shadow.card,
     },
     historyHeader: {
-      alignItems: 'flex-start',
+      alignItems: 'center',
       flexDirection: 'row',
-      gap: 12,
       justifyContent: 'space-between',
+      gap: 10,
     },
     historyPressed: {
       opacity: 0.88,
       transform: [{ scale: 0.99 }],
     },
-    historyTitleBlock: {
-      flex: 1,
-    },
     integrityText: {
       color: colors.success,
       fontSize: type.tiny,
-      fontWeight: '800',
+      fontWeight: '900',
       letterSpacing: 0.5,
     },
     list: {
@@ -237,7 +295,7 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     meta: {
       color: colors.mutedStrong,
       fontSize: type.body,
-      marginTop: 6,
+      marginTop: 5,
     },
     remark: {
       color: colors.mutedStrong,
@@ -248,13 +306,25 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     resultMeta: {
       color: colors.text,
       fontSize: type.body,
-      fontWeight: '700',
+      fontWeight: '900',
     },
     resultRow: {
       alignItems: 'center',
       flexDirection: 'row',
+      gap: 12,
       justifyContent: 'space-between',
       marginTop: 14,
+    },
+    scoreBadge: {
+      backgroundColor: colors.panelSoft,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+    },
+    scoreBadgeText: {
+      fontSize: type.body,
+      fontWeight: '900',
     },
     submittedAt: {
       color: colors.muted,
@@ -263,8 +333,8 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     title: {
       color: colors.text,
-      fontSize: type.title + 2,
-      fontWeight: '800',
+      fontSize: type.title,
+      fontWeight: '900',
     },
   });
 }

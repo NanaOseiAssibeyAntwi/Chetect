@@ -5,7 +5,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AppScreen } from '@/components/app-screen';
 import { ActionButton, SurfaceCard } from '@/components/product-ui';
-import { layout, radius, type } from '@/constants/design';
+import { layout, radius, shadow, type } from '@/constants/design';
 import { useAppTheme } from '@/hooks/use-app-theme';
 
 const supportItems = [
@@ -31,48 +31,52 @@ export default function HelpSupportScreen() {
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   return (
-    <AppScreen contentContainerStyle={styles.content} edges={['top']}>
+    <AppScreen accent="teal" contentContainerStyle={styles.content} edges={['top']}>
       <View style={styles.headerRow}>
         <Pressable onPress={() => router.navigate('/(tabs)/profile')} style={styles.backButton}>
           <Feather color={colors.mutedStrong} name="chevron-left" size={18} />
         </Pressable>
-        <Text style={styles.eyebrow}>HELP & SUPPORT</Text>
+        <View style={styles.headerText}>
+          <Text style={styles.eyebrow}>HELP & SUPPORT</Text>
+          <Text style={styles.headerTitle}>Student support</Text>
+        </View>
       </View>
 
-      <SurfaceCard style={styles.heroCard}>
+      <View style={styles.heroCard}>
         <View style={styles.heroIcon}>
-          <MaterialCommunityIcons color={colors.teal} name="help-circle-outline" size={26} />
+          <MaterialCommunityIcons color={colors.teal} name="lifebuoy" size={24} />
         </View>
         <View style={styles.heroText}>
           <Text style={styles.title}>Academic IT Support</Text>
           <Text style={styles.meta}>Use your department help desk for urgent exam access issues.</Text>
         </View>
-      </SurfaceCard>
+      </View>
 
       <View style={styles.list}>
         {supportItems.map((item) => (
-          <SurfaceCard key={item.title} tone="muted">
-            <View style={styles.supportRow}>
-              <View style={styles.supportIcon}>
-                <MaterialCommunityIcons color={colors.teal} name={item.icon} size={20} />
-              </View>
-              <View style={styles.supportText}>
-                <Text style={styles.supportTitle}>{item.title}</Text>
-                <Text style={styles.supportValue}>{item.value}</Text>
-              </View>
+          <View key={item.title} style={styles.supportCard}>
+            <View style={styles.supportIcon}>
+              <MaterialCommunityIcons color={colors.teal} name={item.icon} size={20} />
             </View>
-          </SurfaceCard>
+            <View style={styles.supportText}>
+              <Text style={styles.supportTitle}>{item.title}</Text>
+              <Text style={styles.supportValue}>{item.value}</Text>
+            </View>
+          </View>
         ))}
       </View>
 
-      <SurfaceCard style={styles.contactCard}>
-        <Text style={styles.contactTitle}>Need assistance?</Text>
+      <SurfaceCard style={styles.contactCard} tone="muted">
+        <View style={styles.contactHeader}>
+          <Feather color={colors.teal} name="send" size={17} />
+          <Text style={styles.contactTitle}>Need assistance?</Text>
+        </View>
         <Text style={styles.contactCopy}>
           Contact academic IT with your student ID, course code, exam title, and a short description of the issue.
         </Text>
         <ActionButton
           containerStyle={styles.profileButton}
-          icon={<Feather color={colors.background} name="user" size={15} />}
+          icon={<Feather color="#ffffff" name="user" size={15} />}
           label="Back to Profile"
           onPress={() => router.navigate('/(tabs)/profile')}
           tone="primary"
@@ -90,9 +94,9 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       borderColor: colors.border,
       borderRadius: radius.md,
       borderWidth: 1,
-      height: 28,
+      height: 34,
       justifyContent: 'center',
-      width: 28,
+      width: 34,
     },
     contactCard: {
       marginTop: 18,
@@ -101,21 +105,26 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       color: colors.mutedStrong,
       fontSize: type.bodyLarge,
       lineHeight: 22,
-      marginTop: 8,
+      marginTop: 10,
+    },
+    contactHeader: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 9,
     },
     contactTitle: {
       color: colors.text,
-      fontSize: type.title,
-      fontWeight: '800',
+      fontSize: type.bodyLarge,
+      fontWeight: '900',
     },
     content: {
       paddingBottom: layout.bottomPadding,
     },
     eyebrow: {
-      color: colors.mutedStrong,
-      fontSize: type.label,
-      fontWeight: '700',
-      letterSpacing: 0.5,
+      color: colors.teal,
+      fontSize: type.tiny,
+      fontWeight: '900',
+      letterSpacing: 1,
       textTransform: 'uppercase',
     },
     headerRow: {
@@ -123,60 +132,86 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       flexDirection: 'row',
       gap: 10,
     },
+    headerText: {
+      flex: 1,
+      gap: 3,
+    },
+    headerTitle: {
+      color: colors.text,
+      fontSize: type.bodyLarge,
+      fontWeight: '900',
+    },
     heroCard: {
       alignItems: 'center',
+      backgroundColor: colors.panel,
+      borderColor: colors.borderStrong,
+      borderRadius: radius.lg,
+      borderWidth: 1,
       flexDirection: 'row',
-      gap: 14,
-      marginTop: 18,
+      gap: 13,
+      marginTop: 16,
+      paddingHorizontal: 16,
+      paddingVertical: 15,
+      ...shadow.raised,
     },
     heroIcon: {
       alignItems: 'center',
       backgroundColor: colors.tealSoft,
-      borderColor: colors.border,
-      borderRadius: radius.pill,
+      borderColor: colors.tealGlow,
+      borderRadius: radius.md,
       borderWidth: 1,
-      height: 54,
+      height: 44,
       justifyContent: 'center',
-      width: 54,
+      width: 44,
     },
     heroText: {
       flex: 1,
+      minWidth: 0,
     },
     list: {
       gap: 12,
-      marginTop: 18,
+      marginTop: 16,
     },
     meta: {
       color: colors.mutedStrong,
       fontSize: type.body,
       lineHeight: 20,
-      marginTop: 6,
+      marginTop: 5,
     },
     profileButton: {
-      marginTop: 18,
+      marginTop: 16,
+    },
+    supportCard: {
+      alignItems: 'center',
+      backgroundColor: colors.panel,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      flexDirection: 'row',
+      gap: 12,
+      minHeight: 76,
+      paddingHorizontal: 14,
+      paddingVertical: 14,
+      ...shadow.card,
     },
     supportIcon: {
       alignItems: 'center',
       backgroundColor: colors.tealSoft,
-      borderColor: colors.border,
+      borderColor: colors.tealGlow,
       borderRadius: radius.md,
       borderWidth: 1,
       height: 40,
       justifyContent: 'center',
       width: 40,
     },
-    supportRow: {
-      alignItems: 'center',
-      flexDirection: 'row',
-      gap: 12,
-    },
     supportText: {
       flex: 1,
+      minWidth: 0,
     },
     supportTitle: {
       color: colors.text,
       fontSize: type.bodyLarge,
-      fontWeight: '800',
+      fontWeight: '900',
     },
     supportValue: {
       color: colors.mutedStrong,
@@ -186,8 +221,8 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     title: {
       color: colors.text,
-      fontSize: type.title + 2,
-      fontWeight: '800',
+      fontSize: type.title,
+      fontWeight: '900',
     },
   });
 }

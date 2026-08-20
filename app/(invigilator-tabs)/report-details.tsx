@@ -7,7 +7,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 
 import { AppScreen } from '@/components/app-screen';
 import { ActionButton, AccentBadge, InlineMessage, MetricTile, SurfaceCard } from '@/components/product-ui';
-import { layout, radius, shadow, type } from '@/constants/design';
+import { font, layout, radius, shadow, type } from '@/constants/design';
 import { useCachedResource } from '@/hooks/use-cached-resource';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import {
@@ -312,8 +312,11 @@ export default function InvigilatorReportDetailsScreen() {
   return (
     <AppScreen accent="warning" contentContainerStyle={styles.content} edges={['top']}>
       <View style={styles.headerRow}>
-        <Pressable onPress={() => router.navigate('/(invigilator-tabs)/reports')} style={styles.backButton}>
-          <Feather color={colors.mutedStrong} name="chevron-left" size={18} />
+        <Pressable
+          onPress={() => router.navigate('/(invigilator-tabs)/reports')}
+          style={({ pressed }) => [styles.backButton, pressed ? styles.buttonPressed : null]}>
+          <Feather color={colors.warning} name="chevron-left" size={17} />
+          <Text style={styles.backButtonText}>Reports</Text>
         </Pressable>
         <Text style={styles.eyebrow}>REPORT DETAILS</Text>
       </View>
@@ -543,17 +546,31 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     backButton: {
       alignItems: 'center',
       backgroundColor: colors.panel,
-      borderColor: colors.border,
-      borderRadius: radius.md,
+      borderColor: colors.warningSoft,
+      borderRadius: radius.pill,
       borderWidth: 1,
-      height: 30,
+      flexDirection: 'row',
+      gap: 5,
+      minHeight: 38,
       justifyContent: 'center',
-      width: 30,
+      paddingHorizontal: 12,
       ...shadow.card,
+    },
+    backButtonText: {
+      color: colors.warning,
+      fontFamily: font.body,
+      fontSize: type.body,
+      fontWeight: '900',
+    },
+    buttonPressed: {
+      opacity: 0.9,
+      transform: [{ scale: 0.985 }],
     },
     clipErrorText: {
       color: colors.danger,
+      fontFamily: font.body,
       fontSize: type.body,
+      lineHeight: 20,
       marginTop: 8,
     },
     clipList: {
@@ -562,38 +579,43 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     clipToggleButton: {
       alignItems: 'center',
-      backgroundColor: colors.tealSoft,
-      borderColor: colors.tealGlow,
-      borderRadius: radius.sm,
+      backgroundColor: colors.warningSoft,
+      borderColor: colors.warningSoft,
+      borderRadius: radius.md,
       borderWidth: 1.5,
       marginTop: 12,
       paddingVertical: 11,
     },
     clipToggleText: {
-      color: colors.teal,
+      color: colors.warning,
+      fontFamily: font.body,
       fontSize: type.body,
-      fontWeight: '700',
+      fontWeight: '900',
     },
     clipWaitingText: {
       color: colors.mutedStrong,
+      fontFamily: font.body,
       fontSize: type.body,
+      lineHeight: 20,
       marginTop: 6,
     },
     content: {
       paddingBottom: layout.bottomPadding,
     },
     courseCode: {
-      color: colors.muted,
-      fontSize: type.label,
-      fontWeight: '800',
-      letterSpacing: 0.5,
+      color: colors.warning,
+      fontFamily: font.body,
+      fontSize: type.tiny,
+      fontWeight: '900',
+      letterSpacing: 1,
       textTransform: 'uppercase',
     },
     detailLabel: {
       color: colors.muted,
       flex: 0.42,
+      fontFamily: font.body,
       fontSize: type.body,
-      fontWeight: '700',
+      fontWeight: '900',
       textTransform: 'uppercase',
     },
     detailRow: {
@@ -605,16 +627,21 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       paddingVertical: 13,
     },
     detailsCard: {
+      borderLeftColor: colors.warning,
+      borderLeftWidth: 4,
       marginTop: 16,
     },
     detailValue: {
       color: colors.text,
       flex: 1,
+      fontFamily: font.body,
       fontSize: type.body,
-      fontWeight: '700',
+      fontWeight: '900',
       textAlign: 'right',
     },
     eventCard: {
+      borderLeftColor: colors.warning,
+      borderLeftWidth: 3,
       paddingHorizontal: 14,
       paddingVertical: 14,
     },
@@ -632,20 +659,26 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     eventMeta: {
       color: colors.muted,
+      fontFamily: font.body,
       fontSize: type.tiny,
+      fontWeight: '800',
       letterSpacing: 0.4,
       marginTop: 6,
       textTransform: 'uppercase',
     },
     eventReason: {
       color: colors.text,
+      fontFamily: font.body,
       fontSize: type.bodyLarge,
+      fontWeight: '800',
+      lineHeight: 21,
       marginTop: 12,
     },
     eventsCount: {
       color: colors.warning,
+      fontFamily: font.body,
       fontSize: type.body,
-      fontWeight: '700',
+      fontWeight: '900',
     },
     eventsHeader: {
       alignItems: 'center',
@@ -659,27 +692,33 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     eventStudent: {
       color: colors.text,
+      fontFamily: font.body,
       fontSize: type.body,
-      fontWeight: '800',
+      fontWeight: '900',
     },
     eventStudentBlock: {
       flex: 1,
     },
     eventStudentId: {
       color: colors.muted,
+      fontFamily: font.body,
       fontSize: type.tiny,
+      fontWeight: '800',
       marginTop: 3,
     },
     eventTime: {
       color: colors.muted,
+      fontFamily: font.body,
       fontSize: type.tiny,
+      fontWeight: '800',
       textAlign: 'right',
     },
     eyebrow: {
       color: colors.mutedStrong,
+      fontFamily: font.body,
       fontSize: type.label,
-      fontWeight: '700',
-      letterSpacing: 0.5,
+      fontWeight: '900',
+      letterSpacing: 0.8,
       textTransform: 'uppercase',
     },
     headerRow: {
@@ -689,15 +728,17 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     heroCard: {
       alignItems: 'center',
+      borderColor: colors.borderStrong,
       flexDirection: 'row',
       gap: 14,
       marginTop: 18,
+      ...shadow.raised,
     },
     heroIcon: {
       alignItems: 'center',
       backgroundColor: colors.warningSoft,
-      borderColor: colors.border,
-      borderRadius: radius.pill,
+      borderColor: colors.warningSoft,
+      borderRadius: radius.md,
       borderWidth: 1,
       height: 54,
       justifyContent: 'center',
@@ -713,8 +754,9 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       paddingVertical: 4,
     },
     levelText: {
+      fontFamily: font.body,
       fontSize: type.tiny,
-      fontWeight: '800',
+      fontWeight: '900',
       letterSpacing: 0.8,
     },
     loadingCard: {
@@ -725,13 +767,16 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     loadingText: {
       color: colors.mutedStrong,
+      fontFamily: font.body,
       fontSize: type.body,
+      fontWeight: '700',
     },
     message: {
       marginTop: 14,
     },
     meta: {
       color: colors.mutedStrong,
+      fontFamily: font.body,
       fontSize: type.body,
       lineHeight: 20,
       marginTop: 6,
@@ -747,9 +792,10 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     sectionLabel: {
       color: colors.mutedStrong,
+      fontFamily: font.body,
       fontSize: type.label,
-      fontWeight: '800',
-      letterSpacing: 0.5,
+      fontWeight: '900',
+      letterSpacing: 0.8,
       marginBottom: 4,
       textTransform: 'uppercase',
     },
@@ -763,7 +809,9 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     segmentMeta: {
       color: colors.muted,
+      fontFamily: font.body,
       fontSize: type.tiny,
+      fontWeight: '800',
       letterSpacing: 0.4,
       marginBottom: 4,
     },
@@ -776,8 +824,10 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     title: {
       color: colors.text,
-      fontSize: type.title + 2,
+      fontFamily: font.display,
+      fontSize: type.display,
       fontWeight: '900',
+      lineHeight: type.display + 5,
       marginTop: 7,
     },
   });

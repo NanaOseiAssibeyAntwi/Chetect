@@ -5,7 +5,7 @@ import { BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { EntryBadge, EntryPanel, EntryScreen, useEntryAccents } from '@/components/entry-shell';
 import { EntryField, EntryHeaderBar, EntryPrimaryAction } from '@/components/entry-auth';
-import { font, radius, type } from '@/constants/design';
+import { font, radius, shadow, type } from '@/constants/design';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { signInStudent } from '@/lib/student-auth';
 
@@ -50,16 +50,39 @@ export default function SignInScreen() {
   };
 
   return (
-    <EntryScreen accent="teal" keyboardAware>
-      <EntryHeaderBar accent="teal" label="Student access" onBack={returnToLanding} />
+    <EntryScreen
+      accent="teal"
+      contentContainerStyle={styles.screenContent}
+      header={<EntryHeaderBar accent="teal" label="Student access" onBack={returnToLanding} />}
+      keyboardAware>
+      <View style={styles.heroCard}>
+        <View style={styles.heroIcon}>
+          <MaterialCommunityIcons color={tone.accent} name="school-outline" size={28} />
+        </View>
+        <View style={styles.heroText}>
+          <EntryBadge accent="teal" detail="KNUST" label="Student portal" style={styles.badge} />
+          <Text style={styles.title}>Sign in to Chetect</Text>
+          <Text style={styles.subtitle}>Access registered exams, results, and monitored sessions.</Text>
+        </View>
+      </View>
 
-      <View style={styles.wordmarkBlock}>
-        <EntryBadge accent="teal" detail="KNUST" label="Exam access" />
-        <Text style={styles.title}>Student Sign In</Text>
-        <Text style={styles.subtitle}>Secure login for monitored exam sessions</Text>
+      <View style={styles.quickRow}>
+        <View style={styles.quickPill}>
+          <Feather color={tone.accent} name="calendar" size={14} />
+          <Text style={styles.quickText}>Exam schedule</Text>
+        </View>
+        <View style={styles.quickPill}>
+          <Feather color={colors.success} name="shield" size={14} />
+          <Text style={styles.quickText}>Verified access</Text>
+        </View>
       </View>
 
       <EntryPanel accent="teal" style={styles.formPanel}>
+        <View style={styles.formHeader}>
+          <Text style={styles.formTitle}>Student credentials</Text>
+          <Text style={styles.formSubtitle}>Use your student ID and password.</Text>
+        </View>
+
         <EntryField
           accent="teal"
           autoCapitalize="none"
@@ -88,32 +111,33 @@ export default function SignInScreen() {
           value={password}
         />
 
-        {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+        {errorMessage ? (
+          <View style={styles.errorBox}>
+            <Feather color={colors.danger} name="alert-circle" size={16} />
+            <Text style={styles.errorText}>{errorMessage}</Text>
+          </View>
+        ) : null}
       </EntryPanel>
 
       <View style={styles.verificationCard}>
-        <View style={styles.verificationLeft}>
-          <View style={[styles.verificationIcon, { backgroundColor: tone.soft }]}>
-            <MaterialCommunityIcons color={tone.accent} name="shield-check-outline" size={20} />
-          </View>
-          <View>
-            <Text style={styles.verificationTitle}>Identity Verification</Text>
-            <Text style={styles.verificationMeta}>Profile + session check</Text>
-          </View>
+        <View style={[styles.verificationIcon, { backgroundColor: tone.soft }]}>
+          <MaterialCommunityIcons color={tone.accent} name="face-recognition" size={20} />
         </View>
-        <View style={[styles.verificationDot, { backgroundColor: colors.success }]} />
+        <View style={styles.verificationText}>
+          <Text style={styles.verificationTitle}>Exam identity check</Text>
+          <Text style={styles.verificationMeta}>Camera permission is requested only inside the exam session.</Text>
+        </View>
       </View>
 
       <EntryPrimaryAction
         accent="teal"
         isLoading={isLoading}
-        label="Authenticate"
+        label="Sign in as student"
         onPress={handleStudentSignIn}
       />
 
-      <View style={styles.footerSpacer} />
-
       <View style={[styles.securityBar, { backgroundColor: tone.soft, borderColor: tone.border }]}>
+        <Feather color={tone.accent} name="lock" size={14} />
         <Text style={styles.securityLabel}>Access level</Text>
         <Text style={[styles.securityText, { color: tone.accent }]}>Student</Text>
       </View>
@@ -123,24 +147,108 @@ export default function SignInScreen() {
 
 function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   return StyleSheet.create({
+    badge: {
+      alignSelf: 'flex-start',
+    },
+    errorBox: {
+      alignItems: 'flex-start',
+      backgroundColor: colors.dangerSoft,
+      borderColor: colors.dangerSoft,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      flexDirection: 'row',
+      gap: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 11,
+    },
     errorText: {
       color: colors.danger,
+      flex: 1,
       fontFamily: font.body,
       fontSize: type.body,
-      marginTop: 4,
+      lineHeight: 20,
     },
-    footerSpacer: {
-      minHeight: 24,
+    formHeader: {
+      gap: 5,
     },
     formPanel: {
       gap: 16,
-      marginTop: 24,
+      marginTop: 16,
+    },
+    formSubtitle: {
+      color: colors.mutedStrong,
+      fontFamily: font.body,
+      fontSize: type.body,
+    },
+    formTitle: {
+      color: colors.text,
+      fontFamily: font.body,
+      fontSize: type.bodyLarge,
+      fontWeight: '900',
+    },
+    heroCard: {
+      alignItems: 'center',
+      backgroundColor: colors.panel,
+      borderColor: colors.borderStrong,
+      borderRadius: radius.lg,
+      borderWidth: 1,
+      flexDirection: 'row',
+      gap: 14,
+      paddingHorizontal: 16,
+      paddingVertical: 16,
+      ...shadow.raised,
+    },
+    heroIcon: {
+      alignItems: 'center',
+      backgroundColor: colors.tealSoft,
+      borderColor: colors.tealGlow,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      height: 54,
+      justifyContent: 'center',
+      width: 54,
+    },
+    heroText: {
+      flex: 1,
+      minWidth: 0,
+    },
+    quickPill: {
+      alignItems: 'center',
+      backgroundColor: colors.panel,
+      borderColor: colors.border,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      flex: 1,
+      flexDirection: 'row',
+      gap: 7,
+      justifyContent: 'center',
+      minHeight: 38,
+      paddingHorizontal: 10,
+      ...shadow.card,
+    },
+    quickRow: {
+      flexDirection: 'row',
+      gap: 10,
+      marginTop: 12,
+    },
+    quickText: {
+      color: colors.mutedStrong,
+      fontFamily: font.body,
+      fontSize: type.tiny,
+      fontWeight: '900',
+      letterSpacing: 0.4,
+      textTransform: 'uppercase',
+    },
+    screenContent: {
+      justifyContent: 'flex-start',
+      paddingTop: 8,
     },
     securityBar: {
       alignItems: 'center',
       borderRadius: radius.md,
       borderWidth: 1,
       flexDirection: 'row',
+      gap: 8,
       justifyContent: 'space-between',
       marginTop: 14,
       paddingHorizontal: 14,
@@ -148,26 +256,30 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     securityLabel: {
       color: colors.mutedStrong,
-      fontFamily: font.body,
-      fontSize: type.body,
-    },
-    securityText: {
+      flex: 1,
       fontFamily: font.body,
       fontSize: type.body,
       fontWeight: '800',
     },
+    securityText: {
+      fontFamily: font.body,
+      fontSize: type.body,
+      fontWeight: '900',
+    },
     subtitle: {
       color: colors.mutedStrong,
       fontFamily: font.body,
-      fontSize: type.subtitle,
-      marginTop: 10,
+      fontSize: type.body,
+      lineHeight: 20,
+      marginTop: 6,
     },
     title: {
       color: colors.text,
       fontFamily: font.display,
-      fontSize: type.display,
+      fontSize: type.title,
       fontWeight: '900',
-      marginTop: 14,
+      lineHeight: 24,
+      marginTop: 10,
     },
     verificationCard: {
       alignItems: 'center',
@@ -176,45 +288,35 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       borderRadius: radius.md,
       borderWidth: 1,
       flexDirection: 'row',
-      justifyContent: 'space-between',
-      marginTop: 16,
-      paddingHorizontal: 16,
-      paddingVertical: 14,
-    },
-    verificationDot: {
-      borderRadius: 99,
-      height: 6,
-      width: 6,
+      gap: 12,
+      marginTop: 14,
+      paddingHorizontal: 14,
+      paddingVertical: 13,
+      ...shadow.card,
     },
     verificationIcon: {
       alignItems: 'center',
-      borderRadius: radius.sm,
-      height: 40,
+      borderRadius: radius.md,
+      height: 38,
       justifyContent: 'center',
-      width: 40,
-    },
-    verificationLeft: {
-      alignItems: 'center',
-      flexDirection: 'row',
-      gap: 12,
+      width: 38,
     },
     verificationMeta: {
       color: colors.mutedStrong,
       fontFamily: font.body,
-      fontSize: type.tiny,
-      letterSpacing: 0.4,
+      fontSize: type.body,
+      lineHeight: 19,
       marginTop: 4,
-      textTransform: 'uppercase',
+    },
+    verificationText: {
+      flex: 1,
+      minWidth: 0,
     },
     verificationTitle: {
       color: colors.text,
       fontFamily: font.body,
-      fontSize: 17,
-      fontWeight: '700',
-    },
-    wordmarkBlock: {
-      gap: 10,
-      marginTop: 22,
+      fontSize: type.bodyLarge,
+      fontWeight: '900',
     },
   });
 }

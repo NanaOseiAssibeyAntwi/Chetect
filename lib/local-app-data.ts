@@ -42,13 +42,6 @@ async function clearWebStorage() {
   }
 
   try {
-    const cacheStorage = (globalThis as typeof globalThis & { caches?: CacheStorage }).caches;
-    if (!cacheStorage) {
-      return;
-    }
-
-    const cacheKeys = await cacheStorage.keys();
-    await Promise.all(cacheKeys.map((cacheKey) => cacheStorage.delete(cacheKey)));
   } catch {
     // Cache storage is not guaranteed to exist in every browser/runtime.
   }
@@ -98,10 +91,7 @@ async function clearNativeStorage() {
     // Ignore best effort storage cleanup failures.
   }
 
-  await Promise.all([
-    clearDirectoryContents(FileSystem.cacheDirectory),
-    clearDirectoryContents(FileSystem.documentDirectory),
-  ]);
+  await clearDirectoryContents(FileSystem.documentDirectory);
 }
 
 export async function clearLocalAppData() {

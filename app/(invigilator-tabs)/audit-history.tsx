@@ -6,7 +6,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 
 import { AppScreen } from '@/components/app-screen';
 import { ActionButton, AccentBadge, InlineMessage, SurfaceCard } from '@/components/product-ui';
-import { layout, radius, type } from '@/constants/design';
+import { font, layout, radius, shadow, type } from '@/constants/design';
 import { useCachedResource } from '@/hooks/use-cached-resource';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import {
@@ -73,15 +73,23 @@ export default function InvigilatorAuditHistoryScreen() {
   return (
     <AppScreen accent="warning" contentContainerStyle={styles.content} edges={['top']}>
       <View style={styles.headerRow}>
-        <Pressable onPress={() => router.navigate('/(invigilator-tabs)/profile')} style={styles.backButton}>
-          <Feather color={colors.mutedStrong} name="chevron-left" size={18} />
+        <Pressable
+          onPress={() => router.navigate('/(invigilator-tabs)/profile')}
+          style={({ pressed }) => [styles.backButton, pressed ? styles.buttonPressed : null]}>
+          <Feather color={colors.warning} name="chevron-left" size={17} />
+          <Text style={styles.backButtonText}>Profile</Text>
         </Pressable>
         <Text style={styles.eyebrow}>AUDIT HISTORY</Text>
       </View>
 
       <SurfaceCard style={styles.heroCard}>
-        <Text style={styles.title}>Oversight Sessions</Text>
-        <Text style={styles.meta}>{history.length} assigned or created sessions</Text>
+        <View style={styles.heroIcon}>
+          <Feather color={colors.warning} name="clipboard" size={23} />
+        </View>
+        <View style={styles.heroText}>
+          <Text style={styles.title}>Oversight Sessions</Text>
+          <Text style={styles.meta}>{history.length} assigned or created sessions</Text>
+        </View>
       </SurfaceCard>
 
       {isLoading ? (
@@ -119,7 +127,7 @@ export default function InvigilatorAuditHistoryScreen() {
 
       <View style={styles.list}>
         {history.map((item) => (
-          <SurfaceCard key={item.examId}>
+          <SurfaceCard key={item.examId} style={styles.auditCard}>
             <View style={styles.auditHeader}>
               <View style={styles.auditTitleBlock}>
                 <Text style={styles.courseCode}>{item.courseCode}</Text>
@@ -151,8 +159,9 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     auditMeta: {
       color: colors.mutedStrong,
+      fontFamily: font.body,
       fontSize: type.body,
-      fontWeight: '700',
+      fontWeight: '800',
     },
     auditStats: {
       alignItems: 'center',
@@ -163,37 +172,58 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     auditTitle: {
       color: colors.text,
+      fontFamily: font.display,
       fontSize: type.title,
-      fontWeight: '800',
+      fontWeight: '900',
       marginTop: 6,
     },
     auditTitleBlock: {
       flex: 1,
     },
+    auditCard: {
+      borderLeftColor: colors.warning,
+      borderLeftWidth: 4,
+    },
     backButton: {
       alignItems: 'center',
       backgroundColor: colors.panel,
-      borderColor: colors.border,
-      borderRadius: radius.md,
+      borderColor: colors.warningSoft,
+      borderRadius: radius.pill,
       borderWidth: 1,
-      height: 28,
+      flexDirection: 'row',
+      gap: 5,
+      minHeight: 38,
       justifyContent: 'center',
-      width: 28,
+      paddingHorizontal: 12,
+      ...shadow.card,
+    },
+    backButtonText: {
+      color: colors.warning,
+      fontFamily: font.body,
+      fontSize: type.body,
+      fontWeight: '900',
+    },
+    buttonPressed: {
+      opacity: 0.9,
+      transform: [{ scale: 0.985 }],
     },
     content: {
       paddingBottom: layout.bottomPadding,
     },
     courseCode: {
-      color: colors.muted,
+      color: colors.warning,
+      fontFamily: font.body,
       fontSize: type.tiny,
-      fontWeight: '700',
-      letterSpacing: 0.7,
+      fontWeight: '900',
+      letterSpacing: 0.9,
+      textTransform: 'uppercase',
     },
     eyebrow: {
       color: colors.mutedStrong,
+      fontFamily: font.body,
       fontSize: type.label,
-      fontWeight: '700',
-      letterSpacing: 0.5,
+      fontWeight: '900',
+      letterSpacing: 0.8,
       textTransform: 'uppercase',
     },
     headerRow: {
@@ -202,12 +232,32 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       gap: 10,
     },
     heroCard: {
+      alignItems: 'center',
+      borderColor: colors.borderStrong,
+      flexDirection: 'row',
+      gap: 14,
       marginTop: 18,
+      ...shadow.raised,
+    },
+    heroIcon: {
+      alignItems: 'center',
+      backgroundColor: colors.warningSoft,
+      borderColor: colors.warningSoft,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      height: 52,
+      justifyContent: 'center',
+      width: 52,
+    },
+    heroText: {
+      flex: 1,
+      minWidth: 0,
     },
     integrityText: {
       color: colors.success,
+      fontFamily: font.body,
       fontSize: type.body,
-      fontWeight: '800',
+      fontWeight: '900',
     },
     list: {
       gap: 12,
@@ -221,32 +271,41 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     loadingText: {
       color: colors.mutedStrong,
+      fontFamily: font.body,
       fontSize: type.body,
+      fontWeight: '700',
     },
     message: {
       marginTop: 14,
     },
     meta: {
       color: colors.mutedStrong,
+      fontFamily: font.body,
       fontSize: type.body,
+      lineHeight: 20,
       marginTop: 6,
     },
     modeText: {
       color: colors.muted,
+      fontFamily: font.body,
       fontSize: type.tiny,
-      fontWeight: '700',
+      fontWeight: '900',
       letterSpacing: 0.5,
       marginTop: 12,
     },
     scheduleText: {
       color: colors.muted,
+      fontFamily: font.body,
       fontSize: type.body,
+      fontWeight: '700',
       marginTop: 10,
     },
     title: {
       color: colors.text,
-      fontSize: type.title + 2,
-      fontWeight: '800',
+      fontFamily: font.display,
+      fontSize: type.display,
+      fontWeight: '900',
+      lineHeight: type.display + 5,
     },
   });
 }

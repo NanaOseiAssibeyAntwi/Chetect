@@ -2,11 +2,11 @@ import { Feather } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
 import { ComponentProps, useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AppScreen } from '@/components/app-screen';
 import { ActionButton, InlineMessage, MetricTile, SurfaceCard } from '@/components/product-ui';
-import { layout, radius, shadow, type } from '@/constants/design';
+import { font, layout, radius, shadow, type } from '@/constants/design';
 import { useCachedResource } from '@/hooks/use-cached-resource';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import {
@@ -119,7 +119,7 @@ export default function InvigilatorProfileScreen() {
     [profileData]
   );
 
-  const handleSignOut = async () => {
+  const performSignOut = async () => {
     setSignOutErrorMessage('');
     setIsSigningOut(true);
 
@@ -133,9 +133,52 @@ export default function InvigilatorProfileScreen() {
     }
   };
 
+  const handleSignOut = () => {
+    if (isSigningOut) {
+      return;
+    }
+
+    Alert.alert('Sign out?', 'Are you sure you want to sign out of this invigilator account?', [
+      { style: 'cancel', text: 'Cancel' },
+      {
+        onPress: () => {
+          void performSignOut();
+        },
+        style: 'destructive',
+        text: 'Sign Out',
+      },
+    ]);
+  };
+
   return (
-    <AppScreen accent="warning">
-      <Text style={styles.eyebrow}>INVIGILATOR PROFILE</Text>
+    <AppScreen accent="warning" contentContainerStyle={styles.content} scroll={false}>
+      <View style={styles.heroHeader}>
+        <View style={styles.heroTopRow}>
+          <View style={styles.eyebrowPill}>
+            <View style={styles.eyebrowDot} />
+            <Text style={styles.eyebrow}>INVIGILATOR PROFILE</Text>
+          </View>
+          <View style={styles.levelChip}>
+            <Text style={styles.levelChipText}>{profileData?.stats.level ?? 'L2'}</Text>
+          </View>
+        </View>
+
+        <View style={styles.heroBody}>
+          <View style={styles.avatarBox}>
+            <Text style={styles.avatarText}>{toInitials(profileData?.staffName ?? 'Invigilator')}</Text>
+          </View>
+          <View style={styles.heroText}>
+            <Text numberOfLines={2} style={styles.name}>
+              {profileData?.staffName ?? 'Invigilator'}
+            </Text>
+            <Text style={styles.meta}>{formatStaffId(profileData?.staffId ?? null)}</Text>
+            <Text numberOfLines={1} style={styles.metaSmall}>
+              {roleLabel(profileData?.role ?? 'invigilator')}
+              {profileData?.departmentName ? ` - ${profileData.departmentName}` : ''}
+            </Text>
+          </View>
+        </View>
+      </View>
 
       {isLoading ? (
         <View style={styles.loadingCard}>
@@ -165,168 +208,188 @@ export default function InvigilatorProfileScreen() {
         <InlineMessage description={signOutErrorMessage} style={styles.errorMessage} tone="danger" />
       ) : null}
 
-      <SurfaceCard style={styles.heroCard}>
-        <View style={styles.avatarBox}>
-          <Text style={styles.avatarText}>{toInitials(profileData?.staffName ?? 'Invigilator')}</Text>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        style={styles.scrollArea}>
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View>
+              <Text style={styles.sectionLabel}>OVERSIGHT RECORD</Text>
+              <Text style={styles.sectionMeta}>Current invigilator activity</Text>
+            </View>
+            <Feather color={colors.mutedStrong} name="activity" size={18} />
+          </View>
+          <View style={styles.statsRow}>
+            {stats.map((item) => (
+              <MetricTile
+                accentColor={colors.warning}
+                key={item.label}
+                label={item.label}
+                value={item.value}
+              />
+            ))}
+          </View>
         </View>
-        <View style={styles.heroText}>
-          <Text style={styles.name}>{profileData?.staffName ?? 'Invigilator'}</Text>
-          <Text style={styles.meta}>{formatStaffId(profileData?.staffId ?? null)}</Text>
-          <Text style={styles.metaSmall}>
-            ROLE: {roleLabel(profileData?.role ?? 'invigilator')}
-            {profileData?.departmentName ? `   ${profileData.departmentName}` : ''}
-          </Text>
+
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionLabel}>ACCOUNT</Text>
+            <Feather color={colors.mutedStrong} name="settings" size={18} />
+          </View>
+          <SurfaceCard style={styles.group}>
+            {accountItems.map((item, index) => (
+              <Pressable
+                key={item.label}
+                onPress={() => router.push(item.href)}
+                style={({ pressed }) => [
+                  styles.infoCard,
+                  index === accountItems.length - 1 ? styles.infoCardLast : null,
+                  pressed ? styles.infoCardPressed : null,
+                ]}>
+                <View style={styles.itemRow}>
+                  <View style={styles.itemIconBox}>
+                    <Feather color={colors.warning} name={item.icon} size={19} />
+                  </View>
+                  <View style={styles.itemText}>
+                    <Text style={styles.itemLabel}>{item.label}</Text>
+                    <Text style={styles.itemValue}>{item.value}</Text>
+                  </View>
+                  <Feather color={colors.mutedStrong} name="chevron-right" size={16} />
+                </View>
+              </Pressable>
+            ))}
+          </SurfaceCard>
         </View>
-        <View style={styles.heroBadge}>
-          <Text style={styles.heroBadgeText}>{profileData?.stats.level ?? 'L2'}</Text>
+
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionLabel}>SUPPORT</Text>
+            <Feather color={colors.mutedStrong} name="life-buoy" size={18} />
+          </View>
+          <SurfaceCard style={styles.group}>
+            {supportItems.map((item, index) => (
+              <Pressable
+                key={item.label}
+                onPress={() => router.push(item.href)}
+                style={({ pressed }) => [
+                  styles.infoCard,
+                  index === supportItems.length - 1 ? styles.infoCardLast : null,
+                  pressed ? styles.infoCardPressed : null,
+                ]}>
+                <View style={styles.itemRow}>
+                  <View style={styles.itemIconBox}>
+                    <Feather color={colors.warning} name={item.icon} size={19} />
+                  </View>
+                  <View style={styles.itemText}>
+                    <Text style={styles.itemLabel}>{item.label}</Text>
+                    <Text style={styles.itemValue}>{item.value}</Text>
+                  </View>
+                  <Feather color={colors.mutedStrong} name="chevron-right" size={16} />
+                </View>
+              </Pressable>
+            ))}
+          </SurfaceCard>
         </View>
-      </SurfaceCard>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionLabel}>OVERSIGHT RECORD</Text>
-        <View style={styles.statsRow}>
-          {stats.map((item) => (
-            <MetricTile
-              accentColor={colors.warning}
-              key={item.label}
-              label={item.label}
-              value={item.value}
-            />
-          ))}
+        <View style={styles.signOutWrap}>
+          <ActionButton
+            disabled={isSigningOut}
+            icon={
+              isSigningOut ? (
+                <ActivityIndicator color={colors.danger} size="small" />
+              ) : (
+                <Feather color={colors.danger} name="log-out" size={15} />
+              )
+            }
+            label="Sign Out"
+            onPress={handleSignOut}
+            tone="danger"
+          />
         </View>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionLabel}>ACCOUNT</Text>
-        <SurfaceCard style={styles.group}>
-          {accountItems.map((item, index) => (
-            <Pressable
-              key={item.label}
-              onPress={() => router.push(item.href)}
-              style={({ pressed }) => [
-                styles.infoCard,
-                index === accountItems.length - 1 ? styles.infoCardLast : null,
-                pressed ? styles.infoCardPressed : null,
-              ]}>
-              <View style={styles.itemRow}>
-                <View style={styles.itemIconBox}>
-                  <Feather color={colors.warning} name={item.icon} size={19} />
-                </View>
-                <View style={styles.itemText}>
-                  <Text style={styles.itemLabel}>{item.label}</Text>
-                  <Text style={styles.itemValue}>{item.value}</Text>
-                </View>
-                <Feather color={colors.mutedStrong} name="chevron-right" size={16} />
-              </View>
-            </Pressable>
-          ))}
-        </SurfaceCard>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionLabel}>SUPPORT</Text>
-        <SurfaceCard style={styles.group}>
-          {supportItems.map((item, index) => (
-            <Pressable
-              key={item.label}
-              onPress={() => router.push(item.href)}
-              style={({ pressed }) => [
-                styles.infoCard,
-                index === supportItems.length - 1 ? styles.infoCardLast : null,
-                pressed ? styles.infoCardPressed : null,
-              ]}>
-              <View style={styles.itemRow}>
-                <View style={styles.itemIconBox}>
-                  <Feather color={colors.warning} name={item.icon} size={19} />
-                </View>
-                <View style={styles.itemText}>
-                  <Text style={styles.itemLabel}>{item.label}</Text>
-                  <Text style={styles.itemValue}>{item.value}</Text>
-                </View>
-                <Feather color={colors.mutedStrong} name="chevron-right" size={16} />
-              </View>
-            </Pressable>
-          ))}
-        </SurfaceCard>
-      </View>
-
-      <View style={styles.footerSpacer} />
-
-      <ActionButton
-        disabled={isSigningOut}
-        icon={
-          isSigningOut ? (
-            <ActivityIndicator color={colors.danger} size="small" />
-          ) : (
-            <Feather color={colors.danger} name="log-out" size={15} />
-          )
-        }
-        label="Sign Out"
-        onPress={handleSignOut}
-        tone="danger"
-      />
+      </ScrollView>
     </AppScreen>
   );
 }
 
 function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   return StyleSheet.create({
+    content: {
+      paddingTop: 4,
+    },
     avatarBox: {
       alignItems: 'center',
       backgroundColor: colors.warningSoft,
-      borderRadius: radius.pill,
-      height: 50,
+      borderColor: colors.warningSoft,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      height: 58,
       justifyContent: 'center',
-      width: 50,
+      width: 58,
     },
     avatarText: {
       color: colors.warning,
-      fontSize: 18,
-      fontWeight: '800',
+      fontFamily: font.display,
+      fontSize: 19,
+      fontWeight: '900',
     },
     errorMessage: {
       marginTop: 14,
     },
     eyebrow: {
-      color: colors.mutedStrong,
+      color: colors.warning,
+      fontFamily: font.body,
       fontSize: type.label,
-      fontWeight: '700',
-      letterSpacing: 0.5,
-      marginTop: 4,
+      fontWeight: '900',
+      letterSpacing: 1,
       textTransform: 'uppercase',
     },
-    footerSpacer: {
-      flex: 1,
-      minHeight: layout.footerSpacer,
+    eyebrowDot: {
+      backgroundColor: colors.warning,
+      borderRadius: radius.pill,
+      height: 7,
+      width: 7,
+    },
+    eyebrowPill: {
+      alignItems: 'center',
+      backgroundColor: colors.warningSoft,
+      borderColor: colors.warningSoft,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      flexDirection: 'row',
+      gap: 7,
+      paddingHorizontal: 11,
+      paddingVertical: 7,
     },
     group: {
       padding: 0,
     },
-    heroBadge: {
-      alignItems: 'center',
-      backgroundColor: colors.warningSoft,
-      borderRadius: radius.pill,
-      height: 36,
-      justifyContent: 'center',
-      width: 36,
-    },
-    heroBadgeText: {
-      color: colors.warning,
-      fontSize: type.tiny,
-      fontWeight: '900',
-      letterSpacing: 0.5,
-    },
-    heroCard: {
+    heroBody: {
       alignItems: 'center',
       flexDirection: 'row',
       gap: 14,
       marginTop: 18,
     },
+    heroHeader: {
+      backgroundColor: colors.panel,
+      borderColor: colors.borderStrong,
+      borderRadius: radius.lg,
+      borderWidth: 1,
+      paddingHorizontal: 16,
+      paddingVertical: 16,
+      ...shadow.raised,
+    },
     heroText: {
       flex: 1,
+      minWidth: 0,
+    },
+    heroTopRow: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      justifyContent: 'space-between',
     },
     infoCard: {
-      borderBottomColor: colors.border,
+      borderBottomColor: colors.borderSoft,
       borderBottomWidth: 1,
       paddingHorizontal: 16,
       paddingVertical: 16,
@@ -335,20 +398,24 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       borderBottomWidth: 0,
     },
     infoCardPressed: {
-      opacity: 0.86,
+      opacity: 0.88,
+      transform: [{ scale: 0.99 }],
     },
     itemIconBox: {
       alignItems: 'center',
       backgroundColor: colors.warningSoft,
-      borderRadius: radius.sm,
-      height: 36,
+      borderColor: colors.warningSoft,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      height: 38,
       justifyContent: 'center',
-      width: 36,
+      width: 38,
     },
     itemLabel: {
       color: colors.text,
+      fontFamily: font.body,
       fontSize: type.bodyLarge,
-      fontWeight: '700',
+      fontWeight: '900',
     },
     itemRow: {
       alignItems: 'center',
@@ -357,11 +424,31 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     itemText: {
       flex: 1,
-      gap: 6,
+      gap: 5,
+      minWidth: 0,
     },
     itemValue: {
       color: colors.mutedStrong,
+      fontFamily: font.body,
       fontSize: 13,
+      lineHeight: 18,
+    },
+    levelChip: {
+      alignItems: 'center',
+      backgroundColor: colors.panelRaised,
+      borderColor: colors.border,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      justifyContent: 'center',
+      minHeight: 34,
+      paddingHorizontal: 12,
+    },
+    levelChipText: {
+      color: colors.text,
+      fontFamily: font.display,
+      fontSize: type.tiny,
+      fontWeight: '900',
+      letterSpacing: 0.7,
     },
     loadingCard: {
       alignItems: 'center',
@@ -378,36 +465,68 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     loadingText: {
       color: colors.mutedStrong,
+      fontFamily: font.body,
       fontSize: type.body,
+      fontWeight: '700',
     },
     meta: {
       color: colors.mutedStrong,
+      fontFamily: font.body,
       fontSize: 14,
-      marginTop: 4,
+      fontWeight: '800',
+      marginTop: 5,
     },
     metaSmall: {
-      color: colors.mutedStrong,
+      color: colors.muted,
+      fontFamily: font.body,
       fontSize: 12,
-      marginTop: 3,
+      fontWeight: '800',
+      letterSpacing: 0.5,
+      marginTop: 5,
+      textTransform: 'uppercase',
     },
     name: {
       color: colors.text,
-      fontSize: type.title + 2,
-      fontWeight: '800',
+      fontFamily: font.display,
+      fontSize: type.display,
+      fontWeight: '900',
+      lineHeight: type.display + 4,
     },
     section: {
-      marginTop: 18,
+      marginTop: 16,
+    },
+    sectionHeader: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      justifyContent: 'space-between',
     },
     sectionLabel: {
       color: colors.mutedStrong,
+      fontFamily: font.body,
       fontSize: type.label,
-      fontWeight: '700',
-      letterSpacing: 0.5,
+      fontWeight: '900',
+      letterSpacing: 0.8,
       textTransform: 'uppercase',
+    },
+    sectionMeta: {
+      color: colors.muted,
+      fontFamily: font.body,
+      fontSize: 12,
+      marginTop: 3,
     },
     statsRow: {
       flexDirection: 'row',
       gap: 8,
+      marginTop: 14,
+    },
+    scrollArea: {
+      flex: 1,
+      marginTop: 14,
+    },
+    scrollContent: {
+      paddingBottom: layout.bottomPadding,
+    },
+    signOutWrap: {
       marginTop: 14,
     },
   });

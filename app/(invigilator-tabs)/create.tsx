@@ -13,7 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ActionButton, InlineMessage, SurfaceCard } from '@/components/product-ui';
-import { layout, radius, shadow, type } from '@/constants/design';
+import { font, layout, radius, shadow, type } from '@/constants/design';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import {
   createExamSession,
@@ -191,18 +191,34 @@ export default function InvigilatorCreateScreen() {
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.headerRow}>
-          <Pressable
-            onPress={() => router.navigate('/(invigilator-tabs)')}
-            style={styles.backButton}>
-            <Feather color={colors.mutedStrong} name="chevron-left" size={18} />
-          </Pressable>
-          <Text style={styles.eyebrow}>NEW SESSION</Text>
+        <View style={styles.heroCard}>
+          <View style={styles.headerRow}>
+            <View style={styles.eyebrowPill}>
+              <View style={styles.eyebrowDot} />
+              <Text style={styles.eyebrow}>NEW SESSION</Text>
+            </View>
+          </View>
+
+          <View style={styles.heroBody}>
+            <View style={styles.heroText}>
+              <Text style={styles.title}>Create Exam Session</Text>
+              <Text style={styles.subtitle}>Set the schedule, students, questions, and monitoring level.</Text>
+            </View>
+            <View style={styles.heroIcon}>
+              <Feather color={colors.warning} name="plus" size={25} />
+            </View>
+          </View>
         </View>
 
-        <Text style={styles.title}>Create Exam Session</Text>
-
         <SurfaceCard style={styles.sectionCard}>
+          <View style={styles.sectionHeading}>
+            <View>
+              <Text style={styles.sectionTitle}>Session details</Text>
+              <Text style={styles.sectionMeta}>Course, timing, and registrations</Text>
+            </View>
+            <Feather color={colors.mutedStrong} name="calendar" size={18} />
+          </View>
+
           <View style={styles.formGroup}>
             <Text style={styles.label}>COURSE CODE</Text>
             <TextInput
@@ -310,17 +326,20 @@ export default function InvigilatorCreateScreen() {
           </View>
         </SurfaceCard>
 
-        <View style={styles.formGroup}>
+        <View style={styles.questionSection}>
           <View style={styles.questionHeader}>
-            <Text style={styles.label}>MULTIPLE CHOICE QUESTIONS (OPTIONAL)</Text>
-            <Pressable onPress={addQuestion} style={styles.addQuestionButton}>
+            <View>
+              <Text style={styles.sectionTitle}>Questions</Text>
+              <Text style={styles.sectionMeta}>Optional multiple-choice auto-grading</Text>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              onPress={addQuestion}
+              style={({ pressed }) => [styles.addQuestionButton, pressed ? styles.buttonPressed : null]}>
               <Feather color={colors.warning} name="plus" size={13} />
               <Text style={styles.addQuestionText}>Add</Text>
             </Pressable>
           </View>
-          <Text style={styles.helperText}>
-            Set the question text, options, and mark the correct answer for auto-grading.
-          </Text>
 
           <View style={styles.questionList}>
             {questions.map((question, questionIndex) => (
@@ -387,7 +406,13 @@ export default function InvigilatorCreateScreen() {
           </View>
         </View>
 
-        <Text style={[styles.label, styles.modeLabel]}>MONITORING MODE</Text>
+        <View style={styles.modeHeader}>
+          <View>
+            <Text style={styles.sectionTitle}>Monitoring mode</Text>
+            <Text style={styles.sectionMeta}>Choose how strict this session should be</Text>
+          </View>
+          <Feather color={colors.warning} name="shield" size={18} />
+        </View>
         <View style={styles.modeList}>
           {monitoringModes.map((item) => {
             const active = item.value === mode;
@@ -444,42 +469,61 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   return StyleSheet.create({
     addQuestionButton: {
       alignItems: 'center',
-      backgroundColor: colors.panel,
-      borderColor: colors.border,
-      borderRadius: radius.sm,
+      backgroundColor: colors.warningSoft,
+      borderColor: colors.warningSoft,
+      borderRadius: radius.pill,
       borderWidth: 1,
       flexDirection: 'row',
       gap: 6,
-      paddingHorizontal: 10,
-      paddingVertical: 6,
+      minHeight: 38,
+      paddingHorizontal: 12,
     },
     addQuestionText: {
-      color: colors.text,
+      color: colors.warning,
+      fontFamily: font.body,
       fontSize: type.body,
-      fontWeight: '700',
+      fontWeight: '900',
     },
-    backButton: {
-      alignItems: 'center',
-      height: 28,
-      justifyContent: 'center',
-      width: 28,
+    buttonPressed: {
+      opacity: 0.9,
+      transform: [{ scale: 0.985 }],
     },
     content: {
       alignSelf: 'center',
       maxWidth: layout.maxWidth,
       paddingBottom: layout.bottomPadding,
       paddingHorizontal: layout.screenPaddingWide,
+      paddingTop: 4,
       width: '100%',
     },
     eyebrow: {
-      color: colors.mutedStrong,
+      color: colors.warning,
+      fontFamily: font.body,
       fontSize: type.label,
-      letterSpacing: 2.2,
+      fontWeight: '900',
+      letterSpacing: 1.1,
+    },
+    eyebrowDot: {
+      backgroundColor: colors.warning,
+      borderRadius: radius.pill,
+      height: 7,
+      width: 7,
+    },
+    eyebrowPill: {
+      alignItems: 'center',
+      backgroundColor: colors.warningSoft,
+      borderColor: colors.warningSoft,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      flexDirection: 'row',
+      gap: 7,
+      paddingHorizontal: 11,
+      paddingVertical: 8,
     },
     correctOptionButton: {
       alignItems: 'center',
       borderColor: colors.border,
-      borderRadius: radius.sm,
+      borderRadius: radius.md,
       borderWidth: 1,
       height: 42,
       justifyContent: 'center',
@@ -492,8 +536,9 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     correctOptionButtonText: {
       color: colors.mutedStrong,
+      fontFamily: font.body,
       fontSize: type.bodyLarge,
-      fontWeight: '700',
+      fontWeight: '900',
     },
     correctOptionButtonTextActive: {
       color: colors.success,
@@ -518,20 +563,53 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     featureText: {
       color: colors.mutedStrong,
+      fontFamily: font.body,
       fontSize: type.bodyLarge,
+      lineHeight: 21,
     },
     formGroup: {
-      marginTop: 18,
+      marginTop: 16,
     },
     headerRow: {
       alignItems: 'center',
       flexDirection: 'row',
-      gap: 10,
+      justifyContent: 'flex-end',
     },
     helperText: {
       color: colors.muted,
+      fontFamily: font.body,
       fontSize: type.tiny,
+      lineHeight: 15,
       marginTop: 8,
+    },
+    heroBody: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 14,
+      marginTop: 18,
+    },
+    heroCard: {
+      backgroundColor: colors.panel,
+      borderColor: colors.borderStrong,
+      borderRadius: radius.lg,
+      borderWidth: 1,
+      paddingHorizontal: 16,
+      paddingVertical: 16,
+      ...shadow.raised,
+    },
+    heroIcon: {
+      alignItems: 'center',
+      backgroundColor: colors.warningSoft,
+      borderColor: colors.warningSoft,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      height: 54,
+      justifyContent: 'center',
+      width: 54,
+    },
+    heroText: {
+      flex: 1,
+      minWidth: 0,
     },
     inlineMessage: {
       marginTop: 16,
@@ -542,6 +620,7 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       borderRadius: radius.md,
       borderWidth: 1,
       color: colors.text,
+      fontFamily: font.body,
       fontSize: type.bodyLarge,
       marginTop: 10,
       paddingHorizontal: 14,
@@ -550,6 +629,7 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     inputInline: {
       color: colors.text,
       flex: 1,
+      fontFamily: font.body,
       fontSize: type.bodyLarge,
       paddingVertical: 12,
     },
@@ -566,8 +646,9 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     label: {
       color: colors.mutedStrong,
+      fontFamily: font.body,
       fontSize: type.label,
-      fontWeight: '700',
+      fontWeight: '900',
       letterSpacing: 0.5,
       textTransform: 'uppercase',
     },
@@ -584,12 +665,14 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       ...shadow.card,
     },
     modeCardActive: {
-      backgroundColor: colors.panelSoft,
+      backgroundColor: colors.warningSoft,
       borderColor: colors.warning,
     },
     modeDescription: {
       color: colors.mutedStrong,
+      fontFamily: font.body,
       fontSize: type.body,
+      lineHeight: 19,
       marginTop: 6,
     },
     modeIndicator: {
@@ -604,7 +687,10 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       backgroundColor: colors.warning,
       borderColor: colors.warning,
     },
-    modeLabel: {
+    modeHeader: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      justifyContent: 'space-between',
       marginTop: 18,
     },
     modeList: {
@@ -613,8 +699,9 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     modeTitle: {
       color: colors.text,
+      fontFamily: font.body,
       fontSize: type.bodyLarge + 1,
-      fontWeight: '700',
+      fontWeight: '900',
     },
     multilineInput: {
       minHeight: 88,
@@ -640,12 +727,10 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       backgroundColor: colors.background,
       flex: 1,
     },
-    sectionCard: {
-      marginTop: 18,
-      paddingVertical: 8,
-    },
     questionCard: {
       marginTop: 10,
+      paddingHorizontal: 14,
+      paddingVertical: 14,
     },
     questionCardHeader: {
       alignItems: 'center',
@@ -658,7 +743,7 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       justifyContent: 'space-between',
     },
     questionList: {
-      marginTop: 8,
+      marginTop: 4,
     },
     questionPromptInput: {
       minHeight: 78,
@@ -666,8 +751,12 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     questionTitle: {
       color: colors.text,
+      fontFamily: font.body,
       fontSize: type.bodyLarge,
-      fontWeight: '700',
+      fontWeight: '900',
+    },
+    questionSection: {
+      marginTop: 18,
     },
     removeQuestionButton: {
       alignItems: 'center',
@@ -688,13 +777,49 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     secondaryButtonText: {
       color: colors.mutedStrong,
+      fontFamily: font.body,
       fontSize: type.bodyLarge,
+      fontWeight: '800',
+    },
+    sectionCard: {
+      marginTop: 16,
+      paddingVertical: 16,
+    },
+    sectionHeading: {
+      alignItems: 'center',
+      borderBottomColor: colors.borderSoft,
+      borderBottomWidth: 1,
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginBottom: 2,
+      paddingBottom: 14,
+    },
+    sectionMeta: {
+      color: colors.muted,
+      fontFamily: font.body,
+      fontSize: 12,
+      marginTop: 3,
+    },
+    sectionTitle: {
+      color: colors.text,
+      fontFamily: font.display,
+      fontSize: type.bodyLarge,
+      fontWeight: '900',
+      textTransform: 'uppercase',
+    },
+    subtitle: {
+      color: colors.mutedStrong,
+      fontFamily: font.body,
+      fontSize: type.body,
+      lineHeight: 20,
+      marginTop: 6,
     },
     title: {
       color: colors.text,
-      fontSize: type.title,
-      fontWeight: '800',
-      marginTop: 22,
+      fontFamily: font.display,
+      fontSize: type.display,
+      fontWeight: '900',
+      lineHeight: type.display + 5,
     },
     twoUp: {
       flexDirection: 'row',

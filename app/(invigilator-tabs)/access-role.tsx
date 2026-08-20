@@ -6,7 +6,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 
 import { AppScreen } from '@/components/app-screen';
 import { ActionButton, InlineMessage, MetricTile, SurfaceCard } from '@/components/product-ui';
-import { layout, radius, type } from '@/constants/design';
+import { font, layout, radius, shadow, type } from '@/constants/design';
 import { useCachedResource } from '@/hooks/use-cached-resource';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import {
@@ -50,8 +50,11 @@ export default function InvigilatorAccessRoleScreen() {
   return (
     <AppScreen accent="warning" contentContainerStyle={styles.content} edges={['top']}>
       <View style={styles.headerRow}>
-        <Pressable onPress={() => router.navigate('/(invigilator-tabs)/profile')} style={styles.backButton}>
-          <Feather color={colors.mutedStrong} name="chevron-left" size={18} />
+        <Pressable
+          onPress={() => router.navigate('/(invigilator-tabs)/profile')}
+          style={({ pressed }) => [styles.backButton, pressed ? styles.buttonPressed : null]}>
+          <Feather color={colors.warning} name="chevron-left" size={17} />
+          <Text style={styles.backButtonText}>Profile</Text>
         </Pressable>
         <Text style={styles.eyebrow}>ACCESS ROLE</Text>
       </View>
@@ -133,21 +136,35 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     backButton: {
       alignItems: 'center',
       backgroundColor: colors.panel,
-      borderColor: colors.border,
-      borderRadius: radius.md,
+      borderColor: colors.warningSoft,
+      borderRadius: radius.pill,
       borderWidth: 1,
-      height: 28,
+      flexDirection: 'row',
+      gap: 5,
+      minHeight: 38,
       justifyContent: 'center',
-      width: 28,
+      paddingHorizontal: 12,
+      ...shadow.card,
+    },
+    backButtonText: {
+      color: colors.warning,
+      fontFamily: font.body,
+      fontSize: type.body,
+      fontWeight: '900',
+    },
+    buttonPressed: {
+      opacity: 0.9,
+      transform: [{ scale: 0.985 }],
     },
     content: {
       paddingBottom: layout.bottomPadding,
     },
     eyebrow: {
       color: colors.mutedStrong,
+      fontFamily: font.body,
       fontSize: type.label,
-      fontWeight: '700',
-      letterSpacing: 0.5,
+      fontWeight: '900',
+      letterSpacing: 0.8,
       textTransform: 'uppercase',
     },
     headerRow: {
@@ -157,15 +174,17 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     heroCard: {
       alignItems: 'center',
+      borderColor: colors.borderStrong,
       flexDirection: 'row',
       gap: 14,
       marginTop: 18,
+      ...shadow.raised,
     },
     heroIcon: {
       alignItems: 'center',
       backgroundColor: colors.warningSoft,
-      borderColor: colors.border,
-      borderRadius: radius.pill,
+      borderColor: colors.warningSoft,
+      borderRadius: radius.md,
       borderWidth: 1,
       height: 54,
       justifyContent: 'center',
@@ -182,26 +201,35 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     loadingText: {
       color: colors.mutedStrong,
+      fontFamily: font.body,
       fontSize: type.body,
+      fontWeight: '700',
     },
     message: {
       marginTop: 14,
     },
     meta: {
       color: colors.mutedStrong,
+      fontFamily: font.body,
       fontSize: type.body,
+      fontWeight: '800',
       marginTop: 4,
     },
     metaSmall: {
       color: colors.muted,
+      fontFamily: font.body,
       fontSize: type.tiny,
+      fontWeight: '800',
+      letterSpacing: 0.5,
       marginTop: 4,
       textTransform: 'uppercase',
     },
     name: {
       color: colors.text,
-      fontSize: type.title + 2,
-      fontWeight: '800',
+      fontFamily: font.display,
+      fontSize: type.display,
+      fontWeight: '900',
+      lineHeight: type.display + 5,
     },
     permissionRow: {
       alignItems: 'center',
@@ -212,16 +240,20 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     permissionText: {
       color: colors.mutedStrong,
       flex: 1,
+      fontFamily: font.body,
       fontSize: type.bodyLarge,
       lineHeight: 21,
     },
     permissionsCard: {
+      borderLeftColor: colors.warning,
+      borderLeftWidth: 4,
       marginTop: 18,
     },
     sectionTitle: {
       color: colors.text,
+      fontFamily: font.display,
       fontSize: type.title,
-      fontWeight: '800',
+      fontWeight: '900',
     },
     statTile: {
       minHeight: 70,

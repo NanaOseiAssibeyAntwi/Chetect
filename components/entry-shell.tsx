@@ -55,6 +55,7 @@ type EntryScreenProps = {
   children: ReactNode;
   contentContainerStyle?: StyleProp<ViewStyle>;
   edges?: Edge[];
+  header?: ReactNode;
   keyboardAware?: boolean;
   scroll?: boolean;
 };
@@ -97,6 +98,7 @@ export function EntryScreen({
   children,
   contentContainerStyle,
   edges = ['top', 'bottom'],
+  header,
   keyboardAware = false,
   scroll = true,
 }: EntryScreenProps) {
@@ -117,6 +119,7 @@ export function EntryScreen({
     <SafeAreaView edges={edges} style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <View style={[styles.shell, { backgroundColor: colors.background }]}>
         <EntryBackdrop />
+        {header ? <View style={styles.fixedHeader}>{header}</View> : null}
         <KeyboardAvoidingView
           behavior={keyboardAware ? Platform.select({ ios: 'padding', default: undefined }) : undefined}
           style={styles.flex}>
@@ -265,6 +268,15 @@ const styles = StyleSheet.create({
     paddingBottom: layout.bottomPadding,
     paddingHorizontal: layout.screenPadding,
     width: '100%',
+  },
+  fixedHeader: {
+    alignSelf: 'center',
+    maxWidth: layout.maxWidth + 26,
+    paddingBottom: 10,
+    paddingHorizontal: layout.screenPadding,
+    paddingTop: 14,
+    width: '100%',
+    zIndex: 2,
   },
   flex: {
     flex: 1,

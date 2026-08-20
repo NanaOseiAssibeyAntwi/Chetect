@@ -5,7 +5,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AppScreen } from '@/components/app-screen';
 import { ActionButton, SurfaceCard } from '@/components/product-ui';
-import { layout, radius, type } from '@/constants/design';
+import { font, layout, radius, shadow, type } from '@/constants/design';
 import { useAppTheme } from '@/hooks/use-app-theme';
 
 const supportItems = [
@@ -33,8 +33,11 @@ export default function InvigilatorHelpSupportScreen() {
   return (
     <AppScreen accent="warning" contentContainerStyle={styles.content} edges={['top']}>
       <View style={styles.headerRow}>
-        <Pressable onPress={() => router.navigate('/(invigilator-tabs)/profile')} style={styles.backButton}>
-          <Feather color={colors.mutedStrong} name="chevron-left" size={18} />
+        <Pressable
+          onPress={() => router.navigate('/(invigilator-tabs)/profile')}
+          style={({ pressed }) => [styles.backButton, pressed ? styles.buttonPressed : null]}>
+          <Feather color={colors.warning} name="chevron-left" size={17} />
+          <Text style={styles.backButtonText}>Profile</Text>
         </Pressable>
         <Text style={styles.eyebrow}>HELP & SUPPORT</Text>
       </View>
@@ -51,7 +54,7 @@ export default function InvigilatorHelpSupportScreen() {
 
       <View style={styles.list}>
         {supportItems.map((item) => (
-          <SurfaceCard key={item.title} tone="muted">
+          <SurfaceCard key={item.title} style={styles.supportCard} tone="muted">
             <View style={styles.supportRow}>
               <View style={styles.supportIcon}>
                 <Feather color={colors.warning} name={item.icon} size={19} />
@@ -87,35 +90,53 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     backButton: {
       alignItems: 'center',
       backgroundColor: colors.panel,
-      borderColor: colors.border,
-      borderRadius: radius.md,
+      borderColor: colors.warningSoft,
+      borderRadius: radius.pill,
       borderWidth: 1,
-      height: 28,
+      flexDirection: 'row',
+      gap: 5,
+      minHeight: 38,
       justifyContent: 'center',
-      width: 28,
+      paddingHorizontal: 12,
+      ...shadow.card,
+    },
+    backButtonText: {
+      color: colors.warning,
+      fontFamily: font.body,
+      fontSize: type.body,
+      fontWeight: '900',
+    },
+    buttonPressed: {
+      opacity: 0.9,
+      transform: [{ scale: 0.985 }],
     },
     contactCard: {
+      borderLeftColor: colors.warning,
+      borderLeftWidth: 4,
       marginTop: 18,
     },
     contactCopy: {
       color: colors.mutedStrong,
+      fontFamily: font.body,
       fontSize: type.bodyLarge,
       lineHeight: 22,
       marginTop: 8,
     },
     contactTitle: {
       color: colors.text,
+      fontFamily: font.display,
       fontSize: type.title,
-      fontWeight: '800',
+      fontWeight: '900',
     },
     content: {
       paddingBottom: layout.bottomPadding,
     },
     eyebrow: {
       color: colors.mutedStrong,
+      fontFamily: font.body,
       fontSize: type.label,
-      fontWeight: '700',
-      letterSpacing: 0.5,
+      fontWeight: '900',
+      letterSpacing: 0.8,
       textTransform: 'uppercase',
     },
     headerRow: {
@@ -125,15 +146,17 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     heroCard: {
       alignItems: 'center',
+      borderColor: colors.borderStrong,
       flexDirection: 'row',
       gap: 14,
       marginTop: 18,
+      ...shadow.raised,
     },
     heroIcon: {
       alignItems: 'center',
       backgroundColor: colors.warningSoft,
-      borderColor: colors.border,
-      borderRadius: radius.pill,
+      borderColor: colors.warningSoft,
+      borderRadius: radius.md,
       borderWidth: 1,
       height: 54,
       justifyContent: 'center',
@@ -148,6 +171,7 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     meta: {
       color: colors.mutedStrong,
+      fontFamily: font.body,
       fontSize: type.body,
       lineHeight: 20,
       marginTop: 6,
@@ -158,7 +182,7 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     supportIcon: {
       alignItems: 'center',
       backgroundColor: colors.warningSoft,
-      borderColor: colors.border,
+      borderColor: colors.warningSoft,
       borderRadius: radius.md,
       borderWidth: 1,
       height: 40,
@@ -172,22 +196,31 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     supportText: {
       flex: 1,
+      minWidth: 0,
     },
     supportTitle: {
       color: colors.text,
+      fontFamily: font.body,
       fontSize: type.bodyLarge,
-      fontWeight: '800',
+      fontWeight: '900',
     },
     supportValue: {
       color: colors.mutedStrong,
+      fontFamily: font.body,
       fontSize: type.body,
       lineHeight: 19,
       marginTop: 5,
     },
+    supportCard: {
+      borderLeftColor: colors.warning,
+      borderLeftWidth: 3,
+    },
     title: {
       color: colors.text,
-      fontSize: type.title + 2,
-      fontWeight: '800',
+      fontFamily: font.display,
+      fontSize: type.display,
+      fontWeight: '900',
+      lineHeight: type.display + 5,
     },
   });
 }

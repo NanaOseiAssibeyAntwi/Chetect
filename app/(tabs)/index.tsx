@@ -13,13 +13,15 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ActionButton, InlineMessage, SurfaceCard } from '@/components/product-ui';
 import { layout, radius, shadow, type } from '@/constants/design';
 import { useCachedResource } from '@/hooks/use-cached-resource';
-import { AccentBadge, ActionButton, InlineMessage, MetricTile, SurfaceCard } from '@/components/product-ui';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import {
   fetchStudentDashboardData,
+  type StudentDashboardActivity,
   type StudentDashboardData,
+  type StudentDashboardExam,
 } from '@/lib/student-dashboard';
 
 function toInitials(name: string) {
@@ -32,6 +34,25 @@ function toInitials(name: string) {
     .toUpperCase();
 
   return initials || 'ST';
+}
+
+function getIntegrityTone(score: number, colors: ReturnType<typeof useAppTheme>['colors']) {
+  if (score >= 80) {
+    return { color: colors.success, label: 'STRONG' };
+  }
+
+  if (score >= 60) {
+    return { color: colors.warning, label: 'WATCH' };
+  }
+
+  return { color: colors.danger, label: 'LOW' };
+}
+
+function openExam(exam: StudentDashboardExam) {
+  router.push({
+    pathname: '/exam-session',
+    params: { examId: exam.examId },
+  });
 }
 
 export default function DashboardScreen() {
@@ -62,25 +83,145 @@ export default function DashboardScreen() {
     }, [dashboardData, refreshDashboard])
   );
 
-  const metrics = useMemo(
-    () => [
-      { label: 'EXAMS TAKEN', value: String(dashboardData?.stats.examsTaken ?? 0) },
-      { label: 'AVG SCORE', value: `${dashboardData?.stats.avgScore ?? 0}%` },
-      { label: 'INTEGRITY', value: String(dashboardData?.stats.integrity ?? 0) },
-    ],
-    [dashboardData]
-  );
-
   const exams = dashboardData?.exams ?? [];
   const activity = dashboardData?.activity ?? [];
   const studentName = dashboardData?.studentName ?? 'Student';
   const studentId = dashboardData?.studentId
     ? dashboardData.studentId.toUpperCase()
     : 'STUDENT ID NOT SET';
+  const unreadNotifications = dashboardData?.unreadNotifications ?? 0;
+  const liveExam = exams.find((exam) => exam.isLive) ?? null;
+  const primaryExam = liveExam ?? exams[0] ?? null;
+  const integrityScore = dashboardData?.stats.integrity ?? 0;
+  const integrityTone = getIntegrityTone(integrityScore, colors);
+  const hasUnreadNotifications = unreadNotifications > 0;
+
+  const statItems = useMemo(
+    () => [
+      {
+        color: colors.teal,
+        icon: 'check-circle' as const,
+        label: 'Taken',
+        value: String(dashboardData?.stats.examsTaken ?? 0),
+      },
+      {
+        color: colors.sky,
+        icon: 'bar-chart-2' as const,
+        label: 'Avg score',
+        value: `${dashboardData?.stats.avgScore ?? 0}%`,
+      },
+      {
+        color: integrityTone.color,
+        icon: 'shield' as const,
+        label: 'Integrity',
+        value: `${integrityScore}`,
+      },
+    ],
+    [colors.sky, colors.teal, dashboardData?.stats.avgScore, dashboardData?.stats.examsTaken, integrityScore, integrityTone.color]
+  );
 
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
+      <View style={styles.topBarShell}>
+        <View style={styles.topBar}>
+          <View style={styles.portalMeta}>
+            <Text style={styles.portalLabel}>STUDENT PORTAL</Text>
+            <Text numberOfLines={1} style={styles.studentId}>{studentId}</Text>
+          </View>
+
+          <View style={styles.headerActions}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => router.push('/(tabs)/notifications')}
+              style={({ pressed }) => [styles.iconButton, pressed ? styles.buttonPressed : null]}>
+              <Ionicons color={colors.mutedStrong} name="notifications-outline" size={19} />
+              {hasUnreadNotifications ? (
+                <View style={styles.notificationCount}>
+                  <Text style={styles.notificationCountText}>
+                    {unreadNotifications > 9 ? '9+' : unreadNotifications}
+                  </Text>
+                </View>
+              ) : null}
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => router.push('/(tabs)/profile')}
+              style={({ pressed }) => [styles.avatarBox, pressed ? styles.buttonPressed : null]}>
+              <Text style={styles.avatarText}>{toInitials(studentName)}</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+
+      <View style={styles.fixedHeroShell}>
+        <View style={styles.heroPanel}>
+          {primaryExam ? (
+            <View style={styles.primaryExamHeader}>
+              <View style={styles.primaryExamIcon}>
+                <Feather
+                  color={primaryExam.isLive ? colors.danger : colors.teal}
+                  name={primaryExam.isLive ? 'radio' : 'calendar'}
+                  size={17}
+                />
+              </View>
+              <View style={styles.primaryExamText}>
+                <View style={styles.primaryExamTopLine}>
+                  <View style={styles.sessionStatePill}>
+                    <View style={[styles.sessionStateDot, liveExam ? styles.sessionStateDotLive : null]} />
+                    <Text style={styles.sessionStateText}>
+                      {liveExam ? 'LIVE' : primaryExam.countdownToStart ?? 'READY'}
+                    </Text>
+                  </View>
+                  <Text numberOfLines={1} style={styles.primaryExamCode}>{primaryExam.code}</Text>
+                </View>
+                <Text numberOfLines={1} style={styles.primaryExamTitle}>{primaryExam.title}</Text>
+                <Text numberOfLines={1} style={styles.primaryMetaText}>{primaryExam.meta}</Text>
+              </View>
+
+              {primaryExam.isLive ? (
+                <Pressable
+                  onPress={() => openExam(primaryExam)}
+                  style={({ pressed }) => [styles.primaryJoinButton, pressed ? styles.buttonPressed : null]}>
+                  <Text style={styles.primaryJoinText}>Join</Text>
+                  <Feather color="#ffffff" name="arrow-right" size={15} />
+                </Pressable>
+              ) : null}
+            </View>
+          ) : (
+            <View style={styles.emptyHeroRow}>
+              <Feather color={colors.success} name="check-circle" size={19} />
+              <Text style={styles.emptyHeroText}>You are all caught up.</Text>
+            </View>
+          )}
+        </View>
+      </View>
+
+      <View style={styles.fixedStatsShell}>
+        <View style={styles.statGrid}>
+          {statItems.map((item) => (
+            <View key={item.label} style={styles.statCard}>
+              <View style={[styles.statIcon, { backgroundColor: `${item.color}18` }]}>
+                <Feather color={item.color} name={item.icon} size={15} />
+              </View>
+              <Text numberOfLines={1} style={[styles.statValue, { color: item.color }]}>{item.value}</Text>
+              <Text numberOfLines={1} style={styles.statLabel}>{item.label}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+
+      <View style={styles.fixedScheduleShell}>
+        <View style={[styles.sectionHeader, styles.fixedSectionHeader]}>
+          <View>
+            <Text style={styles.sectionLabel}>EXAM SCHEDULE</Text>
+            <Text style={styles.sectionSubcopy}>{dashboardData?.upcomingCount ?? 0} upcoming</Text>
+          </View>
+          <Feather color={colors.mutedStrong} name="calendar" size={18} />
+        </View>
+      </View>
+
       <ScrollView
+        style={styles.scrollArea}
         contentContainerStyle={styles.content}
         refreshControl={
           <RefreshControl
@@ -92,36 +233,6 @@ export default function DashboardScreen() {
           />
         }
         showsVerticalScrollIndicator={false}>
-        <View style={styles.heroGradient}>
-          <View style={styles.headerMetaRow}>
-            <Text style={styles.studentId}>{studentId}</Text>
-            <View style={styles.headerActions}>
-              <View style={styles.bellWrap}>
-                <Ionicons color={colors.mutedStrong} name="notifications-outline" size={18} />
-                {(dashboardData?.unreadNotifications ?? 0) > 0 ? <View style={styles.bellDot} /> : null}
-              </View>
-              <Pressable onPress={() => router.push('/(tabs)/profile')} style={styles.avatarBox}>
-                <Text style={styles.avatarText}>{toInitials(studentName)}</Text>
-              </Pressable>
-            </View>
-          </View>
-
-          <Text style={styles.heroGreeting}>Welcome back</Text>
-          <Text style={styles.studentName}>{studentName}</Text>
-        </View>
-
-        <View style={styles.metricRow}>
-          {metrics.map((metric) => (
-            <MetricTile
-              accentColor={colors.teal}
-              key={metric.label}
-              label={metric.label}
-              style={styles.metricTile}
-              value={metric.value}
-            />
-          ))}
-        </View>
-
         {isLoading ? (
           <SurfaceCard style={styles.loadingCard} tone="muted">
             <ActivityIndicator color={colors.teal} size="small" />
@@ -146,94 +257,33 @@ export default function DashboardScreen() {
           />
         ) : null}
 
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionLabel}>EXAM SCHEDULE</Text>
-          <Text style={styles.sectionAccent}>{dashboardData?.upcomingCount ?? 0} upcoming</Text>
-        </View>
-
         <View style={styles.cardList}>
           {exams.length === 0 && !isLoading && !errorMessage ? (
             <SurfaceCard tone="muted">
               <Text style={styles.emptyTitle}>No scheduled exams</Text>
-              <Text style={styles.emptyCopy}>
-                Your upcoming exam sessions will show up here once registered.
-              </Text>
+              <Text style={styles.emptyCopy}>Your registered exam sessions will show up here.</Text>
             </SurfaceCard>
           ) : (
-            exams.map((exam) =>
-              exam.isLive ? (
-                <View key={exam.examId} style={styles.liveExamCard}>
-                  <View style={styles.examRow}>
-                    <View style={styles.examInfo}>
-                      <View style={styles.examCodeRow}>
-                        <Text style={styles.examCodeLive}>{exam.code}</Text>
-                        <View style={styles.liveChip}>
-                          <View style={styles.liveDot} />
-                          <Text style={styles.liveChipText}>LIVE NOW</Text>
-                        </View>
-                      </View>
-                      <Text style={styles.examTitleLive}>{exam.title}</Text>
-                    </View>
-                    <Pressable
-                      onPress={() =>
-                        router.push({
-                          pathname: '/exam-session',
-                          params: { examId: exam.examId },
-                        })
-                      }
-                      style={({ pressed }) => [styles.liveJoinButton, pressed ? styles.liveJoinButtonPressed : null]}>
-                      <Text style={styles.liveJoinText}>Join</Text>
-                      <Feather color={colors.danger} name="arrow-right" size={14} />
-                    </Pressable>
-                  </View>
-                  <Text style={styles.examMetaLive}>{exam.meta}</Text>
-                </View>
-              ) : (
-                <SurfaceCard key={exam.examId} style={styles.examCard}>
-                  <View style={styles.examRow}>
-                    <View style={styles.examInfo}>
-                      <View style={styles.examCodeRow}>
-                        <Text style={styles.examCode}>{exam.code}</Text>
-                        {exam.countdownToStart ? (
-                          <AccentBadge label={exam.countdownToStart} tone="neutral" />
-                        ) : null}
-                      </View>
-                      <Text style={styles.examTitle}>{exam.title}</Text>
-                    </View>
-                  </View>
-                  <Text style={styles.examMeta}>{exam.meta}</Text>
-                </SurfaceCard>
-              )
-            )
+            exams.map((exam) => <ExamScheduleCard colors={colors} exam={exam} key={exam.examId} />)
           )}
         </View>
 
-        <Text style={[styles.sectionLabel, styles.activityHeader]}>RECENT ACTIVITY</Text>
+        <View style={[styles.sectionHeader, styles.activityHeader]}>
+          <View>
+            <Text style={styles.sectionLabel}>RECENT ACTIVITY</Text>
+            <Text style={styles.sectionSubcopy}>Latest completed sessions</Text>
+          </View>
+          <Feather color={colors.mutedStrong} name="activity" size={18} />
+        </View>
 
         <View style={styles.cardList}>
           {activity.length === 0 && !isLoading && !errorMessage ? (
             <SurfaceCard tone="muted">
               <Text style={styles.emptyTitle}>No recent activity</Text>
-              <Text style={styles.emptyCopy}>
-                Your completed sessions and integrity summaries will appear here.
-              </Text>
+              <Text style={styles.emptyCopy}>Completed sessions and summaries will appear here.</Text>
             </SurfaceCard>
           ) : (
-            activity.map((item) => (
-              <Pressable
-                key={`${item.title}-${item.date}`}
-                onPress={() => router.push('/(tabs)/results')}
-                style={({ pressed }) => [styles.activityCard, pressed ? styles.activityCardPressed : null]}>
-                <View>
-                  <Text style={styles.activityTitle}>{item.title}</Text>
-                  <Text style={styles.activityDate}>{item.date}</Text>
-                </View>
-                <View style={styles.activityStats}>
-                  <Text style={styles.activityScore}>{item.score}</Text>
-                  <Text style={styles.activityIntegrity}>INTEGRITY {item.integrity}</Text>
-                </View>
-              </Pressable>
-            ))
+            activity.map((item) => <ActivityRow colors={colors} item={item} key={`${item.title}-${item.date}`} />)
           )}
         </View>
       </ScrollView>
@@ -241,79 +291,157 @@ export default function DashboardScreen() {
   );
 }
 
+function ExamScheduleCard({
+  colors,
+  exam,
+}: {
+  colors: ReturnType<typeof useAppTheme>['colors'];
+  exam: StudentDashboardExam;
+}) {
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const accentColor = exam.isLive ? colors.danger : colors.teal;
+
+  return (
+    <View style={[styles.examCard, { borderLeftColor: accentColor }]}>
+      <View style={styles.examMainRow}>
+        <View style={styles.examIconWrap}>
+          <Feather color={accentColor} name={exam.isLive ? 'radio' : 'book-open'} size={16} />
+        </View>
+        <View style={styles.examInfo}>
+          <View style={styles.examCodeRow}>
+            <Text numberOfLines={1} style={[styles.examCode, { color: accentColor }]}>{exam.code}</Text>
+            <View style={[styles.examPill, exam.isLive ? styles.examPillLive : null]}>
+              <Text style={[styles.examPillText, exam.isLive ? styles.examPillTextLive : null]}>
+                {exam.isLive ? 'LIVE NOW' : exam.countdownToStart ?? 'SCHEDULED'}
+              </Text>
+            </View>
+          </View>
+          <Text numberOfLines={2} style={styles.examTitle}>{exam.title}</Text>
+          <View style={styles.examMetaRow}>
+            <Feather color={colors.muted} name="clock" size={12} />
+            <Text numberOfLines={1} style={styles.examMeta}>{exam.meta}</Text>
+          </View>
+        </View>
+      </View>
+
+      {exam.isLive ? (
+        <Pressable
+          onPress={() => openExam(exam)}
+          style={({ pressed }) => [styles.examJoinButton, pressed ? styles.buttonPressed : null]}>
+          <Text style={styles.examJoinText}>Join</Text>
+          <Feather color={colors.danger} name="arrow-right" size={14} />
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+function ActivityRow({
+  colors,
+  item,
+}: {
+  colors: ReturnType<typeof useAppTheme>['colors'];
+  item: StudentDashboardActivity;
+}) {
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
+  return (
+    <Pressable
+      onPress={() => router.push('/(tabs)/results')}
+      style={({ pressed }) => [styles.activityCard, pressed ? styles.buttonPressed : null]}>
+      <View style={styles.activityIcon}>
+        <Feather color={colors.teal} name="file-text" size={16} />
+      </View>
+      <View style={styles.activityText}>
+        <Text numberOfLines={1} style={styles.activityTitle}>{item.title}</Text>
+        <Text style={styles.activityDate}>{item.date}</Text>
+      </View>
+      <View style={styles.activityStats}>
+        <Text style={styles.activityScore}>{item.score}</Text>
+        <Text numberOfLines={1} style={styles.activityIntegrity}>INT {item.integrity}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
 function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   return StyleSheet.create({
     activityCard: {
+      alignItems: 'center',
       backgroundColor: colors.panel,
       borderColor: colors.border,
       borderRadius: radius.md,
       borderWidth: 1,
       flexDirection: 'row',
-      justifyContent: 'space-between',
+      gap: 12,
+      minHeight: 76,
       paddingHorizontal: 14,
-      paddingVertical: 16,
+      paddingVertical: 14,
       ...shadow.card,
-    },
-    activityCardPressed: {
-      opacity: 0.85,
-      transform: [{ scale: 0.99 }],
     },
     activityDate: {
       color: colors.muted,
       fontSize: 11,
-      marginTop: 12,
+      marginTop: 6,
     },
     activityHeader: {
-      marginBottom: 14,
-      marginTop: 26,
+      marginTop: 28,
+    },
+    activityIcon: {
+      alignItems: 'center',
+      backgroundColor: colors.tealSoft,
+      borderColor: colors.tealGlow,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      height: 38,
+      justifyContent: 'center',
+      width: 38,
     },
     activityIntegrity: {
       color: colors.mutedStrong,
       fontSize: type.tiny,
-      letterSpacing: 1.2,
-      marginTop: 6,
+      fontWeight: '800',
+      letterSpacing: 0.6,
+      marginTop: 5,
+      textAlign: 'right',
     },
     activityScore: {
       color: colors.teal,
-      fontSize: 20,
-      fontWeight: '800',
+      fontSize: 19,
+      fontWeight: '900',
       textAlign: 'right',
     },
     activityStats: {
       alignItems: 'flex-end',
+      minWidth: 58,
+    },
+    activityText: {
+      flex: 1,
+      minWidth: 0,
     },
     activityTitle: {
       color: colors.text,
-      fontSize: 18,
-      fontWeight: '700',
+      fontSize: type.bodyLarge,
+      fontWeight: '800',
     },
     avatarBox: {
       alignItems: 'center',
-      backgroundColor: colors.panelSoft,
-      borderColor: colors.border,
+      backgroundColor: colors.tealSoft,
+      borderColor: colors.tealGlow,
       borderRadius: radius.pill,
       borderWidth: 1,
-      height: 36,
+      height: 40,
       justifyContent: 'center',
-      width: 36,
+      width: 40,
     },
     avatarText: {
-      color: colors.text,
+      color: colors.teal,
       fontSize: 12,
-      fontWeight: '800',
+      fontWeight: '900',
     },
-    bellDot: {
-      backgroundColor: colors.danger,
-      borderRadius: 99,
-      height: 6,
-      position: 'absolute',
-      right: 0,
-      top: 1,
-      width: 6,
-    },
-    bellWrap: {
-      padding: 2,
-      position: 'relative',
+    buttonPressed: {
+      opacity: 0.88,
+      transform: [{ scale: 0.98 }],
     },
     cardList: {
       gap: 12,
@@ -323,141 +451,223 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       maxWidth: layout.maxWidth,
       paddingBottom: layout.bottomPadding,
       paddingHorizontal: layout.screenPaddingWide,
+      paddingTop: 2,
       width: '100%',
     },
     emptyCopy: {
       color: colors.mutedStrong,
       fontSize: type.body,
+      lineHeight: 21,
       marginTop: 8,
+    },
+    emptyHeroRow: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 10,
+    },
+    emptyHeroText: {
+      color: colors.text,
+      flex: 1,
+      fontSize: type.bodyLarge,
+      fontWeight: '800',
     },
     emptyTitle: {
       color: colors.text,
       fontSize: type.bodyLarge,
-      fontWeight: '700',
+      fontWeight: '800',
     },
     errorCard: {
       marginBottom: 14,
       marginTop: 12,
     },
     examCard: {
-      gap: 0,
+      backgroundColor: colors.panel,
+      borderColor: colors.border,
+      borderLeftWidth: 4,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      gap: 14,
+      paddingHorizontal: 14,
+      paddingVertical: 15,
+      ...shadow.card,
     },
     examCode: {
-      color: colors.muted,
+      flexShrink: 1,
       fontSize: 11,
-    },
-    examCodeLive: {
-      color: colors.danger,
-      fontSize: 11,
-      fontWeight: '700',
-      letterSpacing: 0.5,
+      fontWeight: '900',
+      letterSpacing: 0.6,
     },
     examCodeRow: {
       alignItems: 'center',
       flexDirection: 'row',
       gap: 8,
+      minHeight: 24,
+    },
+    examIconWrap: {
+      alignItems: 'center',
+      backgroundColor: colors.panelSoft,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      height: 38,
+      justifyContent: 'center',
+      width: 38,
     },
     examInfo: {
       flex: 1,
+      minWidth: 0,
+    },
+    examJoinButton: {
+      alignItems: 'center',
+      alignSelf: 'flex-start',
+      backgroundColor: colors.dangerSoft,
+      borderColor: colors.dangerSoft,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      flexDirection: 'row',
       gap: 8,
+      minHeight: 40,
+      paddingHorizontal: 16,
+    },
+    examJoinText: {
+      color: colors.danger,
+      fontSize: type.body,
+      fontWeight: '900',
+    },
+    examMainRow: {
+      alignItems: 'flex-start',
+      flexDirection: 'row',
+      gap: 12,
     },
     examMeta: {
       color: colors.mutedStrong,
+      flex: 1,
       fontSize: 12,
-      marginTop: 14,
     },
-    examMetaLive: {
-      color: colors.mutedStrong,
-      fontSize: 12,
-      marginTop: 14,
-    },
-    examRow: {
+    examMetaRow: {
+      alignItems: 'center',
       flexDirection: 'row',
-      gap: 12,
+      gap: 6,
+      marginTop: 11,
+    },
+    examPill: {
+      backgroundColor: colors.panelSoft,
+      borderColor: colors.border,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      flexShrink: 1,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+    },
+    examPillLive: {
+      backgroundColor: colors.dangerSoft,
+      borderColor: colors.dangerSoft,
+    },
+    examPillText: {
+      color: colors.mutedStrong,
+      fontSize: type.tiny,
+      fontWeight: '900',
+      letterSpacing: 0.4,
+    },
+    examPillTextLive: {
+      color: colors.danger,
     },
     examTitle: {
       color: colors.text,
       fontSize: type.title,
-      fontWeight: '700',
+      fontWeight: '900',
+      lineHeight: 24,
+      marginTop: 4,
     },
-    examTitleLive: {
-      color: colors.text,
-      fontSize: type.title,
-      fontWeight: '800',
+    fixedHeroShell: {
+      alignSelf: 'center',
+      backgroundColor: colors.background,
+      maxWidth: layout.maxWidth,
+      paddingBottom: 6,
+      paddingHorizontal: layout.screenPaddingWide,
+      width: '100%',
+    },
+    fixedScheduleShell: {
+      alignSelf: 'center',
+      backgroundColor: colors.background,
+      maxWidth: layout.maxWidth,
+      paddingBottom: 8,
+      paddingHorizontal: layout.screenPaddingWide,
+      width: '100%',
+    },
+    fixedSectionHeader: {
+      marginBottom: 0,
+      marginTop: 0,
+      minHeight: 40,
+    },
+    fixedStatsShell: {
+      alignSelf: 'center',
+      backgroundColor: colors.background,
+      maxWidth: layout.maxWidth,
+      paddingBottom: 8,
+      paddingHorizontal: layout.screenPaddingWide,
+      width: '100%',
     },
     headerActions: {
       alignItems: 'center',
       flexDirection: 'row',
-      gap: 14,
+      gap: 10,
     },
-    headerMetaRow: {
-      alignItems: 'center',
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-    },
-    heroGradient: {
-      backgroundColor: colors.panel,
-      borderColor: colors.border,
-      borderRadius: radius.lg,
-      borderWidth: 1,
-      marginTop: 4,
-      paddingHorizontal: 18,
-      paddingVertical: 18,
-    },
-    heroGreeting: {
+    heroCopy: {
       color: colors.mutedStrong,
       fontSize: type.body,
-      fontWeight: '600',
-      marginTop: 18,
+      lineHeight: 20,
+      marginTop: 6,
     },
-    liveChip: {
-      alignItems: 'center',
-      backgroundColor: colors.dangerSoft,
-      borderRadius: radius.pill,
-      flexDirection: 'row',
-      gap: 6,
-      paddingHorizontal: 9,
-      paddingVertical: 4,
-    },
-    liveChipText: {
-      color: colors.danger,
-      fontSize: type.tiny,
-      fontWeight: '800',
-      letterSpacing: 0.6,
-    },
-    liveDot: {
-      backgroundColor: colors.danger,
-      borderRadius: 99,
-      height: 6,
-      width: 6,
-    },
-    liveExamCard: {
+    heroPanel: {
       backgroundColor: colors.panel,
-      borderColor: colors.danger,
-      borderRadius: radius.md,
+      borderColor: colors.borderStrong,
+      borderRadius: radius.lg,
       borderWidth: 1,
-      paddingHorizontal: 18,
-      paddingVertical: 18,
+      marginTop: 0,
+      overflow: 'hidden',
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      ...shadow.raised,
     },
-    liveJoinButton: {
+    heroTitle: {
+      color: colors.text,
+      fontSize: type.display,
+      fontWeight: '900',
+      letterSpacing: 0,
+      marginTop: 12,
+    },
+    heroTopRow: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 12,
+      justifyContent: 'space-between',
+    },
+    iconButton: {
+      alignItems: 'center',
+      backgroundColor: colors.panel,
+      borderColor: colors.border,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      height: 40,
+      justifyContent: 'center',
+      position: 'relative',
+      width: 40,
+    },
+    integrityPill: {
       alignItems: 'center',
       backgroundColor: colors.panelSoft,
-      borderColor: colors.border,
-      borderWidth: 1,
       borderRadius: radius.pill,
+      borderWidth: 1,
       flexDirection: 'row',
       gap: 6,
-      paddingHorizontal: 16,
-      paddingVertical: 10,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
     },
-    liveJoinButtonPressed: {
-      opacity: 0.88,
-      transform: [{ scale: 0.98 }],
-    },
-    liveJoinText: {
-      color: colors.danger,
-      fontSize: type.body,
-      fontWeight: '800',
+    integrityPillText: {
+      fontSize: type.tiny,
+      fontWeight: '900',
+      letterSpacing: 0.6,
     },
     loadingCard: {
       alignItems: 'center',
@@ -470,49 +680,233 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       color: colors.mutedStrong,
       fontSize: type.body,
     },
-    metricRow: {
+    notificationCount: {
+      alignItems: 'center',
+      backgroundColor: colors.danger,
+      borderColor: colors.panel,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      minWidth: 17,
+      paddingHorizontal: 4,
+      position: 'absolute',
+      right: -3,
+      top: -2,
+    },
+    notificationCountText: {
+      color: '#ffffff',
+      fontSize: 9,
+      fontWeight: '900',
+      lineHeight: 15,
+    },
+    portalLabel: {
+      color: colors.teal,
+      fontSize: type.tiny,
+      fontWeight: '900',
+      letterSpacing: 1.1,
+    },
+    portalMeta: {
+      flex: 1,
+      gap: 5,
+      minWidth: 0,
+    },
+    primaryExamBlock: {
+      borderTopColor: colors.border,
+      borderTopWidth: 1,
+      marginTop: 13,
+      paddingTop: 12,
+    },
+    primaryExamCode: {
+      color: colors.muted,
+      fontSize: type.label,
+      fontWeight: '900',
+      letterSpacing: 0.7,
+    },
+    primaryExamHeader: {
+      alignItems: 'center',
       flexDirection: 'row',
       gap: 10,
-      marginBottom: 22,
-      marginTop: 14,
     },
-    metricTile: {
-      minHeight: 68,
-      paddingVertical: 11,
+    primaryExamIcon: {
+      alignItems: 'center',
+      backgroundColor: colors.panelSoft,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      height: 34,
+      justifyContent: 'center',
+      width: 34,
+    },
+    primaryExamText: {
+      flex: 1,
+      minWidth: 0,
+    },
+    primaryExamTitle: {
+      color: colors.text,
+      fontSize: type.bodyLarge,
+      fontWeight: '900',
+      lineHeight: 20,
+      marginTop: 2,
+    },
+    primaryExamTopLine: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 7,
+      minHeight: 20,
+    },
+    primaryJoinButton: {
+      alignItems: 'center',
+      backgroundColor: colors.danger,
+      borderRadius: radius.md,
+      flexDirection: 'row',
+      gap: 6,
+      justifyContent: 'center',
+      minHeight: 36,
+      paddingHorizontal: 13,
+    },
+    primaryJoinText: {
+      color: '#ffffff',
+      fontSize: type.body,
+      fontWeight: '900',
+    },
+    primaryMetaRow: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 7,
+      marginTop: 10,
+    },
+    primaryMetaText: {
+      color: colors.mutedStrong,
+      flex: 1,
+      fontSize: 12,
     },
     safeArea: {
       backgroundColor: colors.background,
       flex: 1,
     },
-    sectionAccent: {
-      color: colors.success,
-      fontSize: type.body,
-      fontWeight: '700',
+    scrollArea: {
+      flex: 1,
     },
     sectionHeader: {
       alignItems: 'center',
       flexDirection: 'row',
       justifyContent: 'space-between',
-      marginBottom: 14,
+      marginBottom: 12,
+      marginTop: 24,
     },
     sectionLabel: {
-      color: colors.mutedStrong,
-      fontSize: type.label,
-      fontWeight: '700',
-      letterSpacing: 0.5,
+      color: colors.text,
+      fontSize: type.body,
+      fontWeight: '900',
+      letterSpacing: 0.4,
       textTransform: 'uppercase',
     },
-    studentId: {
+    sectionSubcopy: {
       color: colors.muted,
-      fontSize: 11,
-      fontWeight: '600',
-      letterSpacing: 0.4,
-    },
-    studentName: {
-      color: colors.text,
-      fontSize: type.hero,
-      fontWeight: '800',
+      fontSize: 12,
       marginTop: 4,
+    },
+    sessionStateDot: {
+      backgroundColor: colors.success,
+      borderRadius: radius.pill,
+      height: 7,
+      width: 7,
+    },
+    sessionStateDotLive: {
+      backgroundColor: colors.danger,
+    },
+    sessionStatePill: {
+      alignItems: 'center',
+      backgroundColor: colors.panelSoft,
+      borderColor: colors.border,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      flexDirection: 'row',
+      gap: 6,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+    },
+    sessionStateText: {
+      color: colors.mutedStrong,
+      fontSize: type.tiny,
+      fontWeight: '900',
+      letterSpacing: 0.7,
+    },
+    startsInPill: {
+      alignItems: 'center',
+      alignSelf: 'flex-start',
+      backgroundColor: colors.panelSoft,
+      borderColor: colors.border,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      flexDirection: 'row',
+      gap: 7,
+      marginTop: 12,
+      maxWidth: '100%',
+      paddingHorizontal: 11,
+      paddingVertical: 7,
+    },
+    startsInText: {
+      color: colors.mutedStrong,
+      flexShrink: 1,
+      fontSize: type.body,
+      fontWeight: '800',
+    },
+    statCard: {
+      backgroundColor: colors.panel,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      flex: 1,
+      minHeight: 60,
+      minWidth: 0,
+      paddingHorizontal: 9,
+      paddingVertical: 8,
+      ...shadow.card,
+    },
+    statGrid: {
+      flexDirection: 'row',
+      gap: 10,
+    },
+    statIcon: {
+      alignItems: 'center',
+      borderRadius: radius.pill,
+      height: 22,
+      justifyContent: 'center',
+      marginBottom: 4,
+      width: 22,
+    },
+    statLabel: {
+      color: colors.mutedStrong,
+      fontSize: type.tiny,
+      fontWeight: '900',
+      letterSpacing: 0.5,
+      marginTop: 4,
+      textTransform: 'uppercase',
+    },
+    statValue: {
+      fontSize: 18,
+      fontWeight: '900',
+      letterSpacing: 0,
+    },
+    studentId: {
+      color: colors.mutedStrong,
+      fontSize: 12,
+      fontWeight: '800',
+    },
+    topBar: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 14,
+      justifyContent: 'space-between',
+    },
+    topBarShell: {
+      alignSelf: 'center',
+      backgroundColor: colors.background,
+      maxWidth: layout.maxWidth,
+      paddingBottom: 8,
+      paddingHorizontal: layout.screenPaddingWide,
+      paddingTop: 4,
+      width: '100%',
     },
   });
 }

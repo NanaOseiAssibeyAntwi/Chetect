@@ -203,12 +203,6 @@ export default function InvigilatorSessionDetailsScreen() {
               <Text style={styles.detailLabel}>Capacity</Text>
               <Text style={styles.detailValue}>{sessionDetails.maxStudents} students</Text>
             </View>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Session ID</Text>
-              <Text numberOfLines={1} style={styles.detailValue}>
-                {sessionDetails.examId}
-              </Text>
-            </View>
           </SurfaceCard>
 
           {sessionDetails.missingStudentIds.length > 0 ? (

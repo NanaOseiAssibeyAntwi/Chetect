@@ -186,12 +186,13 @@ const ANALYSIS_LABEL_WEIGHT: Record<AnalysisLabel, number> = {
   NO_FACE: 3,
   SUSPICIOUS: 4,
 };
-const DEFAULT_DETECTOR_BASE_URL = 'https://rg-cheating-detector-fghefkddd9chh3ch.eastus-01.azurewebsites.net';
+const DEFAULT_DETECTOR_BASE_URL =
+  'https://cheatingmonitoringaibackuponrender-111222.onrender.com';
 const DEFAULT_DETECTOR_WEBSOCKET_URL =
-  'wss://websocketforchetect-g2ckhweeere5brc2.canadacentral-01.azurewebsites.net/ws/analyze';
+  'wss://chetectwebsocket.onrender.com/ws/analyze';
 const DEFAULT_WEBSOCKET_MAX_CHUNK_BYTES = 8 * 1024 * 1024;
 const WEBSOCKET_ANALYSIS_TIMEOUT_MS = 60_000;
-const WEBSOCKET_CONNECT_TIMEOUT_MS = 20_000;
+const WEBSOCKET_CONNECT_TIMEOUT_MS = 60_000;
 const WEBSOCKET_MAX_QUEUE_LENGTH = 3;
 const WEBSOCKET_PING_INTERVAL_MS = 25_000;
 const WS_OPEN = 1;

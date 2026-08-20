@@ -27,20 +27,81 @@ type AlertToast = {
   body: string;
   createdAt: string;
   examId: string | null;
+  eventId: string | null;
   id: string;
+  source: 'event' | 'notification';
   title: string;
 };
 
+type SuspiciousEventToastRow = {
+  created_at?: string;
+  exam_id?: string;
+  id: string;
+  label?: string;
+  max_score?: number | null;
+  reason?: string | null;
+  risk_level?: string | null;
+  student_id?: string | null;
+};
+
+function getStringField(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function normalizeRiskLabel(value: string | null | undefined) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (normalized === 'critical') {
+    return 'Critical';
+  }
+
+  if (normalized === 'high') {
+    return 'High-risk';
+  }
+
+  if (normalized === 'medium') {
+    return 'Suspicious';
+  }
+
+  return 'Suspicious';
+}
+
 function normalizeNotificationToast(row: NotificationToastRow): AlertToast {
   const data = row.data ?? {};
-  const examId = typeof data.examId === 'string' && data.examId.trim() ? data.examId.trim() : null;
+  const examId = getStringField(data.examId);
+  const eventId = getStringField(data.suspiciousEventId);
 
   return {
     body: String(row.body ?? '').trim() || 'A high-risk suspicious activity was detected.',
     createdAt: String(row.created_at ?? ''),
+    eventId,
     examId,
-    id: row.id,
+    id: eventId ? `event:${eventId}` : `notification:${row.id}`,
+    source: 'notification',
     title: String(row.title ?? '').trim() || 'Suspicious activity alert',
+  };
+}
+
+function normalizeSuspiciousEventToast(row: SuspiciousEventToastRow): AlertToast | null {
+  const eventId = getStringField(row.id);
+  const examId = getStringField(row.exam_id);
+  if (!eventId || !examId) {
+    return null;
+  }
+
+  const riskLabel = normalizeRiskLabel(row.risk_level);
+  const label = String(row.label ?? '').trim().replace(/_/g, ' ').toUpperCase();
+  const score = Number(row.max_score);
+  const scoreText = Number.isFinite(score) ? ` Score ${Math.round(score)}%.` : '';
+  const reason = String(row.reason ?? '').trim() || 'Suspicious behavior detected.';
+
+  return {
+    body: `${reason}${scoreText}`,
+    createdAt: String(row.created_at ?? ''),
+    eventId,
+    examId,
+    id: `event:${eventId}`,
+    source: 'event',
+    title: label ? `${riskLabel} ${label}` : `${riskLabel} activity detected`,
   };
 }
 
@@ -69,6 +130,57 @@ export function InvigilatorAlertToasts() {
     };
   }, []);
 
+  const showToast = useCallback(
+    (toast: AlertToast) => {
+      setToasts((current) => {
+        const existingToast = current.find((item) => item.id === toast.id);
+        if (existingToast?.source === 'notification' && toast.source === 'event') {
+          return current;
+        }
+
+        return [
+          toast,
+          ...current.filter((item) => item.id !== toast.id),
+        ].slice(0, MAX_TOASTS);
+      });
+
+      const existingTimer = timersRef.current[toast.id];
+      if (existingTimer) {
+        clearTimeout(existingTimer);
+      }
+
+      timersRef.current[toast.id] = setTimeout(() => {
+        dismissToast(toast.id);
+      }, TOAST_VISIBLE_MS);
+    },
+    [dismissToast]
+  );
+
+  const showSuspiciousEventToast = useCallback(
+    async (row: SuspiciousEventToastRow) => {
+      const eventId = getStringField(row.id);
+      if (!eventId) {
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('suspicious_events')
+        .select('id, exam_id, label, reason, risk_level, max_score, student_id, created_at')
+        .eq('id', eventId)
+        .maybeSingle<SuspiciousEventToastRow>();
+
+      if (error || !data) {
+        return;
+      }
+
+      const toast = normalizeSuspiciousEventToast(data);
+      if (toast) {
+        showToast(toast);
+      }
+    },
+    [showToast]
+  );
+
   useEffect(() => {
     if (
       isLoading ||
@@ -96,21 +208,18 @@ export function InvigilatorAlertToasts() {
             return;
           }
 
-          const toast = normalizeNotificationToast(notification);
-
-          setToasts((current) => [
-            toast,
-            ...current.filter((item) => item.id !== toast.id),
-          ].slice(0, MAX_TOASTS));
-
-          const existingTimer = timersRef.current[toast.id];
-          if (existingTimer) {
-            clearTimeout(existingTimer);
-          }
-
-          timersRef.current[toast.id] = setTimeout(() => {
-            dismissToast(toast.id);
-          }, TOAST_VISIBLE_MS);
+          showToast(normalizeNotificationToast(notification));
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'suspicious_events',
+        },
+        (payload) => {
+          void showSuspiciousEventToast(payload.new as SuspiciousEventToastRow);
         }
       )
       .subscribe();
@@ -118,7 +227,7 @@ export function InvigilatorAlertToasts() {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [dismissToast, isAuthenticated, isLoading, profile?.id, role]);
+  }, [isAuthenticated, isLoading, profile?.id, role, showSuspiciousEventToast, showToast]);
 
   if (toasts.length === 0) {
     return null;

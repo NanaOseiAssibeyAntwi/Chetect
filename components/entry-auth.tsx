@@ -41,6 +41,7 @@ type EntryPrimaryActionProps = {
 };
 
 export function EntryHeaderBar({ accent = 'teal', label, onBack }: EntryHeaderBarProps) {
+  const { colors } = useAppTheme();
   const tone = useEntryAccents()[accent];
 
   return (
@@ -53,14 +54,17 @@ export function EntryHeaderBar({ accent = 'teal', label, onBack }: EntryHeaderBa
         style={({ pressed }) => [
           styles.backButton,
           {
-            backgroundColor: tone.soft,
-            borderColor: tone.border,
+            backgroundColor: colors.panel,
+            borderColor: colors.border,
           },
           pressed ? styles.pressed : null,
         ]}>
-        <Feather color={tone.accent} name="chevron-left" size={20} />
+        <Feather color={tone.accent} name="chevron-left" size={18} />
+        <Text style={[styles.backButtonText, { color: tone.accent }]}>Back</Text>
       </Pressable>
-      <Text style={[styles.headerLabel, { color: tone.accent }]}>{label}</Text>
+      <View style={[styles.headerLabelPill, { backgroundColor: tone.soft, borderColor: tone.border }]}>
+        <Text style={[styles.headerLabel, { color: tone.accent }]}>{label}</Text>
+      </View>
     </View>
   );
 }
@@ -133,11 +137,19 @@ export function EntryPrimaryAction({
 const styles = StyleSheet.create({
   backButton: {
     alignItems: 'center',
-    borderRadius: radius.md,
+    borderRadius: radius.pill,
     borderWidth: 1,
-    height: 46,
+    flexDirection: 'row',
+    gap: 5,
+    height: 40,
     justifyContent: 'center',
-    width: 46,
+    paddingLeft: 10,
+    paddingRight: 13,
+  },
+  backButtonText: {
+    fontFamily: font.body,
+    fontSize: type.body,
+    fontWeight: '900',
   },
   fieldBlock: {
     gap: 10,
@@ -177,14 +189,20 @@ const styles = StyleSheet.create({
   headerLabel: {
     fontFamily: font.body,
     fontSize: type.label,
-    fontWeight: '800',
+    fontWeight: '900',
     letterSpacing: 0.6,
     textTransform: 'uppercase',
+  },
+  headerLabelPill: {
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
   },
   headerRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 14,
+    justifyContent: 'space-between',
   },
   pressed: {
     opacity: 0.94,

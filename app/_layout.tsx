@@ -3,10 +3,9 @@ import Feather from '@expo/vector-icons/Feather';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { useFonts } from 'expo-font';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import 'react-native-reanimated';
 
@@ -95,14 +94,32 @@ function RootStack() {
 }
 
 export default function RootLayout() {
-  const [iconsLoaded, iconLoadError] = useFonts({
-    ...Feather.font,
-    ...Ionicons.font,
-    ...MaterialCommunityIcons.font,
-    ...MaterialIcons.font,
-  });
+  const [iconsLoaded, setIconsLoaded] = useState(false);
 
-  if (!iconsLoaded && !iconLoadError) {
+  useEffect(() => {
+    let isMounted = true;
+
+    void Promise.all([
+      Feather.loadFont(),
+      Ionicons.loadFont(),
+      MaterialCommunityIcons.loadFont(),
+      MaterialIcons.loadFont(),
+    ])
+      .catch((error) => {
+        console.warn('Unable to preload app icon fonts.', error);
+      })
+      .finally(() => {
+        if (isMounted) {
+          setIconsLoaded(true);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  if (!iconsLoaded) {
     return (
       <View style={styles.iconLoadingScreen}>
         <ActivityIndicator color="#0f766e" size="small" />

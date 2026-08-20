@@ -5,8 +5,8 @@ import { useCallback, useMemo } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AppScreen } from '@/components/app-screen';
-import { ActionButton, AccentBadge, InlineMessage, MetricTile, SectionIntro, SurfaceCard } from '@/components/product-ui';
-import { layout, radius, type } from '@/constants/design';
+import { ActionButton, AccentBadge, InlineMessage, MetricTile, SurfaceCard } from '@/components/product-ui';
+import { font, layout, radius, shadow, type } from '@/constants/design';
 import { useCachedResource } from '@/hooks/use-cached-resource';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import {
@@ -82,12 +82,20 @@ export default function InvigilatorReportsScreen() {
   const reports = reportsData?.reports ?? [];
 
   return (
-    <AppScreen accent="warning">
-      <SectionIntro
-        eyebrow="SESSION REPORTS"
-        subtitle="Review completed session summaries, integrity scores, and flagged incidents across active courses."
-        title="Exam Oversight Reports"
-      />
+    <AppScreen accent="warning" contentContainerStyle={styles.content}>
+      <View style={styles.heroHeader}>
+        <View style={styles.heroText}>
+          <View style={styles.heroBadge}>
+            <View style={styles.heroBadgeDot} />
+            <Text style={styles.heroBadgeText}>SESSION REPORTS</Text>
+          </View>
+          <Text style={styles.heroTitle}>Exam Oversight Reports</Text>
+          <Text style={styles.heroCopy}>Review integrity scores and flagged incidents across sessions.</Text>
+        </View>
+        <View style={styles.heroIcon}>
+          <Feather color={colors.warning} name="file-text" size={25} />
+        </View>
+      </View>
 
       <SurfaceCard style={styles.trustHero}>
         <View style={styles.trustHeroIcon}>
@@ -155,11 +163,11 @@ export default function InvigilatorReportsScreen() {
               })
             }
             style={({ pressed }) => [styles.reportPressable, pressed ? styles.reportPressed : null]}>
-            <SurfaceCard>
+            <SurfaceCard style={styles.reportCard}>
               <View style={styles.reportHeader}>
                 <View style={styles.reportTitleBlock}>
-                  <Text style={styles.reportCourse}>{report.courseTitle}</Text>
                   <Text style={styles.reportCode}>{report.courseCode}</Text>
+                  <Text style={styles.reportCourse}>{report.courseTitle}</Text>
                   <Text style={styles.reportDate}>{formatReportDate(report.scheduledEnd)}</Text>
                 </View>
                 <View style={styles.reportStatusBlock}>
@@ -188,15 +196,86 @@ export default function InvigilatorReportsScreen() {
 
 function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
   return StyleSheet.create({
+    content: {
+      paddingTop: 4,
+    },
     flagsText: {
-      color: colors.warning,
+      color: colors.danger,
+      fontFamily: font.body,
       fontSize: 13,
-      fontWeight: '700',
+      fontWeight: '900',
+    },
+    heroBadge: {
+      alignItems: 'center',
+      alignSelf: 'flex-start',
+      backgroundColor: colors.warningSoft,
+      borderColor: colors.warningSoft,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      flexDirection: 'row',
+      gap: 7,
+      paddingHorizontal: 11,
+      paddingVertical: 7,
+    },
+    heroBadgeDot: {
+      backgroundColor: colors.warning,
+      borderRadius: radius.pill,
+      height: 7,
+      width: 7,
+    },
+    heroBadgeText: {
+      color: colors.warning,
+      fontFamily: font.body,
+      fontSize: type.label,
+      fontWeight: '900',
+      letterSpacing: 1,
+    },
+    heroCopy: {
+      color: colors.mutedStrong,
+      fontFamily: font.body,
+      fontSize: type.body,
+      lineHeight: 20,
+      marginTop: 7,
+    },
+    heroHeader: {
+      alignItems: 'center',
+      backgroundColor: colors.panel,
+      borderColor: colors.borderStrong,
+      borderRadius: radius.lg,
+      borderWidth: 1,
+      flexDirection: 'row',
+      gap: 14,
+      paddingHorizontal: 16,
+      paddingVertical: 16,
+      ...shadow.raised,
+    },
+    heroIcon: {
+      alignItems: 'center',
+      backgroundColor: colors.warningSoft,
+      borderColor: colors.warningSoft,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      height: 54,
+      justifyContent: 'center',
+      width: 54,
+    },
+    heroText: {
+      flex: 1,
+      minWidth: 0,
+    },
+    heroTitle: {
+      color: colors.text,
+      fontFamily: font.display,
+      fontSize: type.display,
+      fontWeight: '900',
+      lineHeight: type.display + 5,
+      marginTop: 12,
     },
     integrityText: {
       color: colors.success,
+      fontFamily: font.body,
       fontSize: 13,
-      fontWeight: '700',
+      fontWeight: '900',
     },
     list: {
       gap: 12,
@@ -210,33 +289,47 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     loadingText: {
       color: colors.mutedStrong,
+      fontFamily: font.body,
       fontSize: type.body,
+      fontWeight: '700',
     },
     message: {
       marginTop: 14,
     },
     reportCode: {
-      color: colors.muted,
-      fontSize: type.label,
-      fontWeight: '800',
-      letterSpacing: 0.5,
-      marginTop: 6,
+      color: colors.warning,
+      fontFamily: font.body,
+      fontSize: type.tiny,
+      fontWeight: '900',
+      letterSpacing: 0.8,
       textTransform: 'uppercase',
     },
     reportCourse: {
       color: colors.text,
+      fontFamily: font.display,
       fontSize: type.title,
-      fontWeight: '700',
+      fontWeight: '900',
+      lineHeight: 23,
+      marginTop: 7,
+    },
+    reportCard: {
+      borderLeftColor: colors.warning,
+      borderLeftWidth: 4,
     },
     reportDate: {
       color: colors.muted,
+      fontFamily: font.body,
       fontSize: 13,
+      fontWeight: '700',
       marginTop: 8,
     },
     reportFooter: {
       alignItems: 'center',
+      borderTopColor: colors.borderSoft,
+      borderTopWidth: 1,
       flexDirection: 'row',
       justifyContent: 'space-between',
+      paddingTop: 14,
       marginTop: 16,
     },
     reportHeader: {
@@ -273,12 +366,13 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       alignItems: 'center',
       flexDirection: 'row',
       gap: 16,
-      marginTop: layout.sectionGap,
+      marginTop: 16,
       paddingHorizontal: 20,
       paddingVertical: 20,
     },
     trustHeroCaption: {
       color: colors.mutedStrong,
+      fontFamily: font.body,
       fontSize: type.body,
       marginTop: 4,
     },
@@ -294,8 +388,9 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     trustHeroLabel: {
       color: colors.mutedStrong,
+      fontFamily: font.body,
       fontSize: type.label,
-      fontWeight: '800',
+      fontWeight: '900',
       letterSpacing: 1,
     },
     trustHeroText: {
@@ -303,6 +398,7 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
     },
     trustHeroValue: {
       color: colors.text,
+      fontFamily: font.display,
       fontSize: type.display + 6,
       fontWeight: '900',
       marginTop: 2,
