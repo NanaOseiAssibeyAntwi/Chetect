@@ -1520,11 +1520,13 @@ class ProctoringAnalysisWebSocket {
   }
 
   async connect() {
+    console.log('[proctoring-websocket] connect attempt', { url: this.url });
     if (this.ready && this.socket?.readyState === WS_OPEN) {
       return;
     }
 
     if (this.connectPromise) {
+      console.log('[proctoring-websocket] connect already in progress');
       return this.connectPromise;
     }
 
@@ -1547,7 +1549,8 @@ class ProctoringAnalysisWebSocket {
         this.handleMessage(event.data);
       };
 
-      socket.onerror = () => {
+      socket.onerror = (event) => {
+        console.log('[proctoring-websocket] socket error event', event, { url: this.url });
         const error = new Error('Detector WebSocket connection error.');
         this.options.onError?.(error.message);
         this.failReady(error);
@@ -1556,7 +1559,12 @@ class ProctoringAnalysisWebSocket {
         }
       };
 
-      socket.onclose = () => {
+      socket.onclose = (event) => {
+        console.log('[proctoring-websocket] socket closed', {
+          code: event?.code,
+          reason: event?.reason,
+          url: this.url,
+        });
         this.handleSocketClose();
       };
     }).finally(() => {

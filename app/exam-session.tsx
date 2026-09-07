@@ -2081,12 +2081,12 @@ export default function ExamSessionScreen() {
       return;
     }
 
-    if (cameraPermission?.granted || cameraPermission?.canAskAgain === false) {
-      return;
-    }
-
+    console.log('[exam-session] requesting camera permission for exam', sessionData.examId, {
+      granted: cameraPermission?.granted,
+      canAskAgain: cameraPermission?.canAskAgain,
+    });
     void requestCameraPermission();
-  }, [cameraPermission?.canAskAgain, cameraPermission?.granted, requestCameraPermission, sessionData]);
+  }, [sessionData?.examId, requestCameraPermission, cameraPermission?.granted, cameraPermission?.canAskAgain]);
 
   useEffect(() => {
     if (!sessionData) {
@@ -2104,9 +2104,22 @@ export default function ExamSessionScreen() {
 
     const bootstrap = async () => {
       try {
+        console.log('[exam-session] creating proctoring session', {
+          examId: sessionData.examId,
+          monitoringMode: sessionData.monitoringMode,
+          cameraGranted: Boolean(cameraPermission?.granted),
+          cameraReady,
+        });
+
         const handle = await ensureActiveProctoringSession({
           examId: sessionData.examId,
           monitoringMode: sessionData.monitoringMode,
+        });
+
+        console.log('[exam-session] proctoring session ready', {
+          analysisSessionId: handle.analysisSessionId,
+          examId: handle.examId,
+          aiSessionId: handle.aiSessionId,
         });
 
         if (isCancelled) {
@@ -2148,6 +2161,7 @@ export default function ExamSessionScreen() {
               return;
             }
 
+            console.log('[exam-session] websocket state changed', state);
             if (state === 'connecting') {
               setProctoringMessage('Connecting to live analysis WebSocket...');
             } else if (state === 'reconnecting') {
@@ -2157,6 +2171,7 @@ export default function ExamSessionScreen() {
             }
           },
           onError: (message) => {
+            console.log('[exam-session] websocket error', message);
             if (!isCancelled && isExamScreenMountedRef.current) {
               setProctoringMessage(message);
             }

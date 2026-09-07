@@ -292,6 +292,8 @@ export default function InvigilatorProfileScreen() {
           </SurfaceCard>
         </View>
 
+        <View style={styles.footerSpacer} />
+
         <View style={styles.signOutWrap}>
           <ActionButton
             disabled={isSigningOut}
@@ -360,6 +362,10 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       gap: 7,
       paddingHorizontal: 11,
       paddingVertical: 7,
+    },
+    footerSpacer: {
+      flex: 1,
+      minHeight: layout.footerSpacer,
     },
     group: {
       padding: 0,
@@ -524,10 +530,10 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['colors']) {
       marginTop: 14,
     },
     scrollContent: {
-      paddingBottom: layout.bottomPadding,
+      paddingBottom: 0,
     },
     signOutWrap: {
-      marginTop: 14,
+      marginTop: 0,
     },
   });
 }
