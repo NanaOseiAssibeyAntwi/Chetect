@@ -12,12 +12,20 @@ import { parseSuspiciousEvidence, SUSPICIOUS_CLIP_BUCKET } from '@/lib/proctorin
  * @returns A human-readable description of the suspicious behavior
  */
 export function generateSpecificReason(
-  label: string | undefined,
   signalCode: string | null | undefined,
   severity: string | null | undefined,
   maxScore: number | undefined,
   originalReason: string
 ): string {
+  const normalizedReason = originalReason.trim();
+  if (
+    normalizedReason &&
+    normalizedReason !== 'Suspicion score remained elevated.' &&
+    normalizedReason !== 'Suspicious activity detected.'
+  ) {
+    return normalizedReason;
+  }
+
   // If no signal code, fall back to original reason with severity
   if (!signalCode) {
     if (severity) {
@@ -31,33 +39,28 @@ export function generateSpecificReason(
   // Map specific signal codes to descriptive messages
   const signalDescriptions: Record<string, string> = {
     // Gaze/Eye tracking
-    'gaze_deviation_horizontal': 'Student looking away from screen (horizontal deviation)',
-    'gaze_deviation_vertical': 'Student looking away from screen (vertical deviation)',
-    'gaze_tracking_lost': 'Eye contact with monitor lost for extended period',
-    'gaze_direction_changed': 'Multiple sudden changes in gaze direction',
-    'excessive_gaze_shift': 'Excessive and rapid eye movement away from desk',
-    'gaze_fixation_broken': 'Abnormal break in eye fixation on exam',
+    'gaze_side_left': 'Eyes shifted sideways toward the left',
+    'gaze_side_right': 'Eyes shifted sideways toward the right',
+    'gaze_vertical_down': 'Eyes shifted downward',
+    'gaze_vertical_up': 'Eyes shifted upward',
     
     // Head pose/Movement
-    'head_pose_abnormal': 'Abnormal head position detected',
-    'head_turn_excessive': 'Excessive head turning away from monitor',
-    'head_yaw_high': 'Head rotated significantly to the side',
-    'head_pitch_high': 'Head tilted unusually up or down',
-    'head_roll_high': 'Head tilted sideways at unusual angle',
-    'head_movement_jerky': 'Erratic or jerky head movements',
-    'head_movement_sustained': 'Sustained head movement away from desk',
+    'head_turn_left': 'Head turned toward the left',
+    'head_turn_right': 'Head turned toward the right',
+    'head_pitch_down': 'Head tilted down',
+    'head_pitch_up': 'Head tilted up',
+    'head_roll_left': 'Head leaning toward the left',
+    'head_roll_right': 'Head leaning toward the right',
     
     // Face detection
-    'no_face_detected': 'Student\'s face not visible in frame',
-    'face_obscured': 'Student\'s face partially obscured or hidden',
+    'no_face': 'No face detected in the sampled frame',
     'multiple_faces': 'Multiple faces detected in exam area',
-    'face_angle_extreme': 'Face positioned at extreme angle to camera',
+    'camera_obstructed_or_dark': 'Camera view appears obstructed or very dark',
+    'low_light': 'Low lighting reduced face visibility',
     
     // Blink/Eye behavior
-    'blink_rate_elevated': 'Unusually high blink rate detected',
-    'blink_rate_suppressed': 'Abnormally low blink rate',
-    'eye_closure_extended': 'Eyes closed for abnormally long duration',
-    'blink_pattern_irregular': 'Irregular eye blink pattern',
+    'blink_high': 'Blink rate is unusually high',
+    'mouth_open': 'Mouth appears open',
     
     // Suspicious patterns
     'attention_lapse': 'Prolonged period of attention deviation',
@@ -83,87 +86,8 @@ export function generateSpecificReason(
 
   // Add score information for context
   if (maxScore !== undefined && maxScore > 0) {
-    const scoreLevel = maxScore > 70 ? 'High confidence' : maxScore > 40 ? 'Moderate confidence' : 'Low confidence';
-    return `${description} (${scoreLevel})`;
-  }
-
-  return description;
-}
-
-function generateSpecificReason(
-  label: string | undefined,
-  signalCode: string | null | undefined,
-  severity: string | null | undefined,
-  maxScore: number | undefined,
-  originalReason: string
-): string {
-  // If no signal code, fall back to original reason with severity
-  if (!signalCode) {
-    if (severity) {
-      return `${originalReason} (${severity.toLowerCase()} severity)`;
-    }
-    return originalReason;
-  }
-
-  const code = signalCode.toLowerCase().trim();
-  
-  // Map specific signal codes to descriptive messages
-  const signalDescriptions: Record<string, string> = {
-    // Gaze/Eye tracking
-    'gaze_deviation_horizontal': 'Student looking away from screen (horizontal deviation)',
-    'gaze_deviation_vertical': 'Student looking away from screen (vertical deviation)',
-    'gaze_tracking_lost': 'Eye contact with monitor lost for extended period',
-    'gaze_direction_changed': 'Multiple sudden changes in gaze direction',
-    'excessive_gaze_shift': 'Excessive and rapid eye movement away from desk',
-    'gaze_fixation_broken': 'Abnormal break in eye fixation on exam',
-    
-    // Head pose/Movement
-    'head_pose_abnormal': 'Abnormal head position detected',
-    'head_turn_excessive': 'Excessive head turning away from monitor',
-    'head_yaw_high': 'Head rotated significantly to the side',
-    'head_pitch_high': 'Head tilted unusually up or down',
-    'head_roll_high': 'Head tilted sideways at unusual angle',
-    'head_movement_jerky': 'Erratic or jerky head movements',
-    'head_movement_sustained': 'Sustained head movement away from desk',
-    
-    // Face detection
-    'no_face_detected': 'Student\'s face not visible in frame',
-    'face_obscured': 'Student\'s face partially obscured or hidden',
-    'multiple_faces': 'Multiple faces detected in exam area',
-    'face_angle_extreme': 'Face positioned at extreme angle to camera',
-    
-    // Blink/Eye behavior
-    'blink_rate_elevated': 'Unusually high blink rate detected',
-    'blink_rate_suppressed': 'Abnormally low blink rate',
-    'eye_closure_extended': 'Eyes closed for abnormally long duration',
-    'blink_pattern_irregular': 'Irregular eye blink pattern',
-    
-    // Suspicious patterns
-    'attention_lapse': 'Prolonged period of attention deviation',
-    'repetitive_pattern': 'Repetitive suspicious behavior pattern',
-    'cumulative_suspicion': 'Multiple suspicious indicators combined',
-  };
-
-  // Get description from map, or construct a message from the code
-  let description = signalDescriptions[code];
-  
-  if (!description) {
-    // Construct human-readable message from signal code
-    description = code
-      .split('_')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
-  }
-
-  // Add severity information if available
-  if (severity) {
-    return `${description} (${severity.toLowerCase()} severity)`;
-  }
-
-  // Add score information for context
-  if (maxScore !== undefined && maxScore > 0) {
-    const scoreLevel = maxScore > 70 ? 'High confidence' : maxScore > 40 ? 'Moderate confidence' : 'Low confidence';
-    return `${description} (${scoreLevel})`;
+    const scoreLevel = maxScore > 70 ? 'high' : maxScore > 40 ? 'moderate' : 'low';
+    return `${description} (${scoreLevel} confidence)`;
   }
 
   return description;
@@ -1739,7 +1663,6 @@ export async function fetchInvigilatorSuspiciousEvents(
           .toUpperCase() || eventRow.student_id.slice(0, 8).toUpperCase();
       const studentName = String(profile?.full_name ?? '').trim() || `Student ${institutionalId}`;
       const specificReason = generateSpecificReason(
-        eventRow.label,
         eventSignalCode,
         eventSeverity,
         eventMaxScore,
