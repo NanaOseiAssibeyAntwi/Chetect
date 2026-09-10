@@ -1,6 +1,0 @@
-env: load .env
-env: export EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_ANON_KEY SUPABASE_SERVICE_ROLE_KEY SUPABASE_DB_URL EXPO_PUBLIC_CHEATING_DETECTOR_URL
-Starting project at C:\Users\USER\Documents\chetect\myApp
-React Compiler enabled
-Metro is running in CI mode, reloads are disabled. Remove CI=true to enable watch mode.
-Starting Metro Bundler
